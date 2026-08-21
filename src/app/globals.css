@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+:root {
+  --color-ink: oklch(16% 0.03 265);
+  --color-ink-deep: oklch(9% 0.02 265);
+  --color-bone: oklch(96% 0.01 85);
+  --color-brass: oklch(76% 0.13 78);
+  --color-brass-dim: oklch(62% 0.10 78);
+  --color-surface: oklch(21% 0.03 265);
+  --color-border: oklch(31% 0.02 265);
+  --color-text: oklch(94% 0.01 85);
+  --color-text-muted: oklch(70% 0.01 85);
+  --color-danger: oklch(62% 0.19 25);
+  --color-success: oklch(70% 0.15 150);
+}
+
+body {
+  background: var(--color-ink-deep);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
