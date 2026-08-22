@@ -33,8 +33,12 @@ const DEFAULT_PORT = '27017'
  * explicit port (it's resolved via DNS SRV records), so no port is added.
  */
 function normalizeHost(hostSegment: string, scheme: string): string {
+  // `hostSegment.split(':')` always returns at least one element (the
+  // hostname), even for an empty string; the `| undefined` here comes from
+  // `noUncheckedIndexedAccess` treating array access as unchecked, not from
+  // a real possibility of a missing hostname.
   const [hostname, port] = hostSegment.split(':')
-  const lowerHostname = hostname.toLowerCase()
+  const lowerHostname = (hostname ?? '').toLowerCase()
   if (scheme === 'mongodb+srv') return lowerHostname
   return `${lowerHostname}:${port ?? DEFAULT_PORT}`
 }
@@ -72,14 +76,20 @@ function normalizeDatabase(pathSegment: string | undefined): string {
  */
 export function resolveDatabaseIdentity(url: string, varName: string): string {
   const match = MONGO_URL_PATTERN.exec(url)
-  if (!match?.groups) {
+  // `noUncheckedIndexedAccess` types every named-group lookup as possibly
+  // `undefined`, even for `scheme` and `hosts`, which the pattern requires
+  // whenever the overall match succeeds. Checking them explicitly (rather
+  // than asserting non-null) means a hypothetical match with a missing
+  // required group produces the same named parse error as no match at all,
+  // instead of a runtime crash.
+  const { scheme, hosts, path } = match?.groups ?? {}
+  if (!scheme || !hosts) {
     throw new DatabaseUrlParseError(
       `Could not parse ${varName} as a MongoDB connection string. Expected ` +
         'mongodb:// or mongodb+srv:// with a valid host, e.g. ' +
         '"mongodb://host:27017/dbname" or "mongodb+srv://host/dbname".',
     )
   }
-  const { scheme, hosts, path } = match.groups
   return `${normalizeHosts(hosts, scheme)}/${normalizeDatabase(path)}`
 }
 

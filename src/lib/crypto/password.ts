@@ -1,10 +1,16 @@
-import { hash, verify, Algorithm } from '@node-rs/argon2'
+import { hash, verify } from '@node-rs/argon2'
 
 export const MIN_PASSWORD_LENGTH = 12
 export const MAX_PASSWORD_LENGTH = 128
 
+// `Algorithm` in `@node-rs/argon2` is declared as an ambient `const enum`,
+// which cannot be imported under `isolatedModules` (required by Next.js;
+// see TS2748). Its `Argon2id` member has a stable numeric value (2) in this
+// package's generated type definitions, so it is inlined here instead.
+const ARGON2ID_ALGORITHM = 2
+
 const OPTIONS = {
-  algorithm: Algorithm.Argon2id,
+  algorithm: ARGON2ID_ALGORITHM,
   memoryCost: 19456,
   timeCost: 2,
   parallelism: 1,
