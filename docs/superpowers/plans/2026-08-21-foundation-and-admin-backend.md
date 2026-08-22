@@ -3788,8 +3788,18 @@ export type InviteDetail = InviteRow & {
   }[]
 }
 
+/**
+ * MongoDB ids are ObjectIds: `findUnique` on a malformed id THROWS rather than
+ * returning null. Ids arrive straight from URLs, so an unparseable one means
+ * "not found", not a 500.
+ */
+function isMalformedIdError(error: unknown): boolean {
+  return error instanceof Error && /malformed objectid/i.test(error.message)
+}
+
 export async function getInvite(db: PrismaClient, id: string): Promise<InviteDetail | null> {
-  const raw = await db.invite.findUnique({
+  const raw = await db.invite
+    .findUnique({
     where: { id },
     select: {
       ...ROW_SELECT,
@@ -3804,7 +3814,11 @@ export async function getInvite(db: PrismaClient, id: string): Promise<InviteDet
         orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
       },
     },
-  })
+    })
+    .catch((error: unknown) => {
+      if (isMalformedIdError(error)) return null
+      throw error
+    })
   if (!raw) return null
   const { _count, ...rest } = raw
   return { ...rest, guestCount: _count.guests } as InviteDetail
@@ -3931,7 +3945,12 @@ export async function listInviteTokens(
 }
 
 export async function getInviteToken(db: PrismaClient, id: string): Promise<string | null> {
-  const row = await db.invite.findUnique({ where: { id }, select: { tokenCipher: true } })
+  const row = await db.invite
+    .findUnique({ where: { id }, select: { tokenCipher: true } })
+    .catch((error: unknown) => {
+      if (isMalformedIdError(error)) return null
+      throw error
+    })
   if (!row) return null
   try {
     return open(row.tokenCipher, getEnv().SESSION_SECRET)
@@ -4850,8 +4869,10 @@ B,1,,Sam,Reyes,,,,`)
 
   it('rolls back entirely when any insert fails', async () => {
     const rows = rowsFrom(`${HEADER}\nA,1,,Ada,Okafor,,,,`)
-    // A label longer than the column allows forces a database error mid-transaction.
-    const bad = [...rows, { ...rows[0]!, label: 'x'.repeat(100_000) }]
+    // MongoDB has no column length limit, so an oversized string would NOT fail here.
+    // A wrongly-typed seat count makes Prisma reject the second insert mid-transaction,
+    // which is what this test needs in order to prove the first insert is rolled back.
+    const bad = [...rows, { ...rows[0]!, seatsAllotted: 'not-a-number' as unknown as number }]
     await expect(commitInviteImport(testDb, null, bad)).rejects.toThrow()
     expect(await testDb.invite.count()).toBe(0)
   })
