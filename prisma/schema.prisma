@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+enum InviteStatus {
+  PENDING
+  ATTENDING
+  DECLINED
+  PARTIAL
+}
+
+enum ExtraSeatsStatus {
+  NONE
+  PENDING
+  APPROVED
+  DENIED
+}
+
+model AdminUser {
+  id                 String         @id @default(auto()) @map("_id") @db.ObjectId
+  email              String         @unique
+  name               String
+  passwordHash       String
+  role               Role           @default(ADMIN)
+  isActive           Boolean        @default(true)
+  mustChangePassword Boolean        @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  sessions           AdminSession[]
+  auditLogs          AuditLog[]
+  checkedInGuests    Guest[]        @relation("CheckedInBy")
+}
+
+model AdminSession {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  tokenHash String    @unique
+  userId    String    @db.ObjectId
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model LoginAttempt {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String
+  succeeded Boolean
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+}
+
+model MediaAsset {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  filename  String
+  mimeType  String
+  bytes     Bytes
+  width     Int
+  height    Int
+  createdAt DateTime @default(now())
+  events    Event[]
+}
+
+model Event {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  tagline          String?
+  startsAt         DateTime
+  timezone         String        @default("UTC")
+  venueName        String
+  address          String
+  dressCode        String?
+  rsvpDeadline     DateTime
+  brandTokens      Json?
+  floorplanAssetId String?       @db.ObjectId
+  floorplanAsset   MediaAsset?   @relation(fields: [floorplanAssetId], references: [id])
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  agendaItems      AgendaItem[]
+  mealOptions      MealOption[]
+  tableMarkers     TableMarker[]
+}
+
+model AgendaItem {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String   @db.ObjectId
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  startsAt    DateTime
+  title       String
+  description String?
+  icon        String?
+  sortOrder   Int      @default(0)
+
+  @@index([eventId, sortOrder])
+}
+
+model MealOption {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String  @db.ObjectId
+  event       Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  label       String
+  description String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+  guests      Guest[]
+
+  @@index([eventId, sortOrder])
+}
+
+model TableMarker {
+  id          String @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String @db.ObjectId
+  event       Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tableNumber String
+  x           Float
+  y           Float
+
+  @@unique([eventId, tableNumber])
+}
+
+model Invite {
+  id                  String           @id @default(auto()) @map("_id") @db.ObjectId
+  tokenHash           String           @unique
+  tokenCipher         String
+  label               String
+  seatsAllotted       Int              @default(1)
+  extraSeatsRequested Int              @default(0)
+  extraSeatsStatus    ExtraSeatsStatus @default(NONE)
+  extraSeatsReason    String?
+  status              InviteStatus     @default(PENDING)
+  tableNumber         String?
+  adminNotes          String?
+  respondedAt         DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  guests              Guest[]
+
+  @@index([status])
+  @@index([label])
+  @@index([createdAt])
+}
+
+model Guest {
+  id                 String      @id @default(auto()) @map("_id") @db.ObjectId
+  inviteId           String      @db.ObjectId
+  invite             Invite      @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  firstName          String
+  lastName           String
+  badgeName          String?
+  company            String?
+  title              String?
+  email              String?
+  phone              String?
+  isPrimary          Boolean     @default(false)
+  attending          Boolean?
+  mealOptionId       String?     @db.ObjectId
+  mealOption         MealOption? @relation(fields: [mealOptionId], references: [id])
+  dietary            String[]    @default([])
+  accessibilityNeeds String?
+  tableNumber        String?
+  checkedInAt        DateTime?
+  checkedInById      String?     @db.ObjectId
+  checkedInBy        AdminUser?  @relation("CheckedInBy", fields: [checkedInById], references: [id])
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@index([inviteId])
+  @@index([attending])
+  @@index([email])
+}
+
+model AuditLog {
+  id        String     @id @default(auto()) @map("_id") @db.ObjectId
+  actorId   String?    @db.ObjectId
+  actor     AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  ip        String?
+  createdAt DateTime   @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}
