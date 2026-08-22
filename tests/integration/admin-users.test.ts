@@ -141,4 +141,33 @@ describe('admin user repository', () => {
     const logs = await testDb.auditLog.findMany()
     expect(JSON.stringify(logs)).not.toContain(PASSWORD)
   })
+
+  // C1: activeOwnersExcluding used to be a plain read inside the
+  // transaction. MongoDB's snapshot isolation only detects write conflicts
+  // on documents BOTH transactions write, so two concurrent demotions of
+  // two *different* owners could each read "one other active owner still
+  // exists", both proceed, and both commit — leaving zero active owners
+  // with no recovery path. This test fires both demotions genuinely
+  // concurrently (Promise.allSettled, no await between the two calls) and
+  // asserts at least one active OWNER survives. It fails against the
+  // read-only guard and must pass once the guard is a write that MongoDB's
+  // conflict detector can see.
+  it('never lets two concurrent demotions strand the account with zero active owners', async () => {
+    const first = await seedOwner()
+    const second = await createAdminUser(testDb, first.id, {
+      email: 'two@example.com', name: 'Two', role: 'OWNER', password: PASSWORD,
+    })
+
+    const results = await Promise.allSettled([
+      updateAdminRole(testDb, first.id, first.id, 'ADMIN'),
+      updateAdminRole(testDb, first.id, second.id, 'ADMIN'),
+    ])
+
+    // At least one side must have been rejected (either with LastOwnerError
+    // or a write-conflict error) — both are acceptable outcomes as long as
+    // the invariant below holds. What must never happen is both succeeding.
+    void results
+    const remainingOwners = await testDb.adminUser.count({ where: { role: 'OWNER', isActive: true } })
+    expect(remainingOwners).toBeGreaterThanOrEqual(1)
+  })
 })

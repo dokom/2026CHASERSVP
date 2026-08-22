@@ -1,4 +1,5 @@
-import type { PrismaClient, Prisma } from '@prisma/client'
+import type { PrismaClient } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { hashPassword } from '@/lib/crypto/password'
 import { writeAudit } from '@/lib/audit'
 import type { Role } from '@/lib/auth/roles'
@@ -71,11 +72,67 @@ export async function createAdminUser(
   })
 }
 
-/** Counts active owners excluding one user, to test whether a change strands the account. */
-async function activeOwnersExcluding(tx: Prisma.TransactionClient, userId: string): Promise<number> {
-  return tx.adminUser.count({
+/** Prisma's MongoDB write-conflict error code — see `withWriteConflictRetry`. */
+const WRITE_CONFLICT_CODE = 'P2034'
+
+/**
+ * Runs `fn` inside a MongoDB transaction. If the transaction aborts with a
+ * write conflict (Prisma error P2034), retries exactly once.
+ *
+ * Why retry rather than let it propagate: `assertSurvivingOwner` below
+ * deliberately turns the last-owner check into a WRITE against every other
+ * active owner's row, specifically so two transactions that would each
+ * leave zero owners are forced to contend on the same document and MongoDB
+ * aborts one of them. With exactly two owners that conflict always means a
+ * genuine last-owner race. With three or more owners it can also fire when
+ * two *unrelated* demotions (of two different, non-last owners) happen to
+ * both touch a third owner's row — a false-positive conflict, not an actual
+ * last-owner violation. Retrying once re-runs the transaction against
+ * fresh post-commit state: the retried attempt then either succeeds
+ * cleanly or correctly throws `LastOwnerError`, instead of surfacing a raw
+ * "write conflict" error to the caller for what may be a perfectly legal
+ * request. A second failure is allowed to propagate rather than retrying
+ * again — Prisma's own transaction options apply bounded retries by
+ * default, and retrying indefinitely here would risk masking sustained
+ * contention as success. The error is never swallowed: on a non-conflict
+ * error, or a conflict on the second attempt, it is rethrown as-is.
+ */
+async function withWriteConflictRetry<T>(
+  db: PrismaClient,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  try {
+    return await db.$transaction(fn)
+  } catch (error) {
+    const isWriteConflict =
+      error instanceof Prisma.PrismaClientKnownRequestError && error.code === WRITE_CONFLICT_CODE
+    if (!isWriteConflict) throw error
+    return db.$transaction(fn)
+  }
+}
+
+/**
+ * Asserts that removing `userId`'s active ownership still leaves at least
+ * one other active owner — and, unlike a plain read, does so as a WRITE so
+ * MongoDB's transaction conflict detector actually covers it.
+ *
+ * MongoDB provides snapshot isolation and only detects write conflicts on
+ * documents that BOTH transactions write; concurrent reads are invisible to
+ * it. A `count()` read here would let two concurrent demotions each read
+ * "one other active owner exists" and both commit, stranding the account
+ * with zero owners — see the concurrency test in
+ * tests/integration/admin-users.test.ts, which fails against a read-only
+ * version of this guard. By instead updating every other active owner's
+ * row, two transactions that would each leave zero owners are forced onto
+ * the same document(s), and one aborts with a write conflict that
+ * `withWriteConflictRetry` handles.
+ */
+async function assertSurvivingOwner(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  const { count } = await tx.adminUser.updateMany({
     where: { role: 'OWNER', isActive: true, id: { not: userId } },
+    data: { updatedAt: new Date() },
   })
+  if (count === 0) throw new LastOwnerError()
 }
 
 export async function updateAdminRole(
@@ -84,13 +141,13 @@ export async function updateAdminRole(
   userId: string,
   role: Role,
 ): Promise<void> {
-  await db.$transaction(async (tx) => {
+  await withWriteConflictRetry(db, async (tx) => {
     const user = await tx.adminUser.findUniqueOrThrow({
       where: { id: userId },
       select: { role: true, isActive: true },
     })
     const losingOwner = user.role === 'OWNER' && user.isActive && role !== 'OWNER'
-    if (losingOwner && (await activeOwnersExcluding(tx, userId)) === 0) throw new LastOwnerError()
+    if (losingOwner) await assertSurvivingOwner(tx, userId)
 
     await tx.adminUser.update({ where: { id: userId }, data: { role } })
     await writeAudit(tx, {
@@ -109,13 +166,13 @@ export async function setAdminActive(
   userId: string,
   isActive: boolean,
 ): Promise<void> {
-  await db.$transaction(async (tx) => {
+  await withWriteConflictRetry(db, async (tx) => {
     const user = await tx.adminUser.findUniqueOrThrow({
       where: { id: userId },
       select: { role: true, isActive: true },
     })
     const losingOwner = user.role === 'OWNER' && user.isActive && !isActive
-    if (losingOwner && (await activeOwnersExcluding(tx, userId)) === 0) throw new LastOwnerError()
+    if (losingOwner) await assertSurvivingOwner(tx, userId)
 
     await tx.adminUser.update({ where: { id: userId }, data: { isActive } })
     if (!isActive) await tx.adminSession.deleteMany({ where: { userId } })
