@@ -31,3 +31,28 @@ export function useMotionScope(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- factory identity is intentionally not a dep
   }, [mode, ...deps])
 }
+
+type WillChangeTarget = HTMLElement | ArrayLike<HTMLElement>
+
+/**
+ * The plan's `will-change` rail: apply it only while a timeline is actually
+ * running, remove it the moment the timeline completes. Pass the result's
+ * `onBegin`/`onComplete` straight through to `animate()` or `createTimeline()`
+ * — never leave `will-change` set in CSS or hanging around after a timeline
+ * finishes, both of which pin a compositor layer for no reason.
+ */
+export function withWillChange(
+  target: WillChangeTarget,
+  property = 'transform, opacity',
+): { onBegin: () => void; onComplete: () => void } {
+  const elements = target instanceof HTMLElement ? [target] : Array.from(target)
+
+  return {
+    onBegin: () => {
+      elements.forEach((el) => { el.style.willChange = property })
+    },
+    onComplete: () => {
+      elements.forEach((el) => { el.style.willChange = '' })
+    },
+  }
+}

@@ -56,7 +56,15 @@ test.describe('motion safety rails', () => {
     // Lite must request strictly fewer scripts than full: the three.js chunk
     // is the difference, and it must never be fetched on a low-tier visit.
     expect(fullScripts.size).toBeGreaterThan(lite.size)
+    // Lite must be a PROPER SUBSET of full — every script lite requests is
+    // also requested by full — not just a smaller unrelated set.
     for (const s of lite) expect(fullScripts.has(s)).toBe(true)
+    // And full must request at least one script lite never does (the
+    // three.js chunk): size inequality plus subset already implies this
+    // set is non-empty, but assert it directly so a future refactor that
+    // breaks the subset property still fails loudly here, not just above.
+    const fullOnly = [...fullScripts].filter((s) => !lite.has(s))
+    expect(fullOnly.length).toBeGreaterThan(0)
   })
 
   test('full motion mounts the foil hero and draws the line to the end', async ({ page }) => {
@@ -64,32 +72,74 @@ test.describe('motion safety rails', () => {
     await expect(page.locator('[data-motion]')).toHaveAttribute('data-motion', 'full')
     await expect(page.locator('canvas[data-foil-hero]')).toHaveCount(1)
 
+    const line = page.locator('[data-brass-line] path')
+
+    // Anime v4's createDrawable proxies `draw` onto stroke-dasharray AND
+    // stroke-dashoffset (see node_modules/animejs/dist/modules/svg/drawable.js).
+    // For this draw range ('0 0' -> '0 1') the offset component is always
+    // `v1 * -pathLength`, and v1 is 0 at BOTH ends of this range — so
+    // strokeDashoffset never moves and asserting on it (the original bug)
+    // passes even when the line never animates at all. The value that
+    // actually carries progress is stroke-dasharray's first number (the
+    // drawn-dash length), scaled against the element's own `pathLength`
+    // attribute (which createDrawable sets to normalize progress to a
+    // fixed unit regardless of the path's real on-screen length).
+    const readDashLength = () => line.evaluate((el) => {
+      // getComputedStyle serializes SVG length lists with a "px" suffix on
+      // each value (e.g. "990.6px, 19.4px"), unlike the raw attribute
+      // (e.g. "990.6 19.4") — parseFloat reads the leading number off
+      // either form and ignores the rest, so one parse handles both.
+      const dasharray = getComputedStyle(el).strokeDasharray || el.getAttribute('stroke-dasharray') || ''
+      return parseFloat(dasharray) || 0
+    })
+    const pathLength = await line.evaluate((el) => Number(el.getAttribute('pathLength')) || 0)
+    expect(pathLength).toBeGreaterThan(0)
+
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(300)
+    const dashAtTop = await readDashLength()
+
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
     await page.waitForTimeout(900)
-    const drawn = await page.locator('[data-brass-line] path').evaluate((el) => {
-      const offset = parseFloat(getComputedStyle(el).strokeDashoffset || '0')
-      return Math.abs(offset) < 2
-    })
-    expect(drawn).toBe(true)
+    const dashAtBottom = await readDashLength()
+
+    // Positive control: the value must actually have moved. A line that
+    // never animates would report the same (or a static) dash length at
+    // both scroll positions and fail here.
+    expect(dashAtBottom).toBeGreaterThan(dashAtTop)
+    // Undrawn near the top of the scroll-linked draw range...
+    expect(dashAtTop).toBeLessThan(pathLength * 0.1)
+    // ...and fully drawn by the bottom.
+    expect(dashAtBottom).toBeGreaterThan(pathLength * 0.9)
   })
-  // If createDrawable expresses progress through stroke-dasharray rather than
-  // dashoffset in this anime version, read whichever property it actually
-  // animates — the contract is "fully drawn at the bottom", not a CSS name.
 
   test('the foil hero pauses when the tab is hidden', async ({ page }) => {
     await page.goto(url)
     await page.waitForSelector('canvas[data-foil-hero]')
-    // Simulate the tab being hidden, then confirm no frame is requested.
-    const framesWhileHidden = await page.evaluate(async () => {
-      Object.defineProperty(document, 'hidden', { get: () => true, configurable: true })
-      document.dispatchEvent(new Event('visibilitychange'))
+
+    const countFrames = (durationMs: number) => page.evaluate(async (duration) => {
       let frames = 0
       const original = window.requestAnimationFrame
       window.requestAnimationFrame = (cb) => { frames++; return original(cb) }
-      await new Promise((r) => setTimeout(r, 400))
+      await new Promise((r) => setTimeout(r, duration))
       window.requestAnimationFrame = original
       return frames
+    }, durationMs)
+
+    // Positive control: prove the render loop is actually running while the
+    // tab is visible. Without this, framesWhileHidden === 0 below would
+    // pass identically whether the tab pauses on hide OR the scene never
+    // renders a single frame in the first place — the assertion alone
+    // cannot distinguish "paused correctly" from "never ran".
+    const framesWhileVisible = await countFrames(400)
+    expect(framesWhileVisible).toBeGreaterThan(0)
+
+    // Simulate the tab being hidden, then confirm no frame is requested.
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { get: () => true, configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
     })
+    const framesWhileHidden = await countFrames(400)
     expect(framesWhileHidden).toBe(0)
   })
 

@@ -16,7 +16,7 @@ export function SeatMap({
   return (
     <div className="space-y-4">
       <p className="font-serif text-2xl">
-        You&rsquo;re at <span className="text-[var(--color-brass)]">Table {table}</span>
+        You&rsquo;re at <span className="text-[var(--brass-ink)]">Table {table}</span>
       </p>
 
       {floorplanAssetId ? (

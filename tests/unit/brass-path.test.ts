@@ -4,6 +4,7 @@ import { buildBrassPath } from '@/lib/motion/brass-path'
 const base = {
   gutterX: 24,
   width: 375,
+  height: 3200,
   start: { x: 187, y: 120 },
   anchors: [{ y: 600 }, { y: 1200 }, { y: 1800, x: 240 }, { y: 2400 }],
   end: { x: 187, y: 3000 },
@@ -51,5 +52,46 @@ describe('buildBrassPath', () => {
 
   it('never emits NaN', () => {
     expect(buildBrassPath(base)).not.toContain('NaN')
+  })
+
+  // L1: consecutive anchors sharing gutterX must not degenerate into a
+  // dead-straight vertical rule (control points equal to both endpoints' x).
+  it('drifts control points sideways when consecutive anchors share gutterX', () => {
+    const straightDown = {
+      gutterX: 24,
+      width: 375,
+      height: 2000,
+      start: { x: 24, y: 100 },
+      anchors: [{ y: 500 }, { y: 900 }, { y: 1300 }],
+      end: { x: 24, y: 1700 },
+    }
+    const d = buildBrassPath(straightDown)
+    const commands = d.match(/C ([^C]+)/g) ?? []
+    expect(commands.length).toBeGreaterThan(0)
+    for (const cmd of commands) {
+      const nums = cmd
+        .replace('C', '')
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number)
+      const [c1x, , c2x] = nums
+      // At least one control point must land off the shared gutter x — a
+      // curve whose controls both sit on x=24 is the plotted vertical rule
+      // the review flagged.
+      expect(c1x === 24 && c2x === 24).toBe(false)
+    }
+  })
+
+  // L2: the end point must always land inside the [0,width] x [0,height]
+  // canvas, even if the caller hands in an out-of-range end anchor.
+  it('clamps an out-of-bounds end point into the canvas', () => {
+    const d = buildBrassPath({ ...base, end: { x: -50, y: 9000 } })
+    const last = d.trim().split(/[A-Z]/).filter(Boolean).at(-1)!.trim().split(/[\s,]+/)
+    const endX = Number(last.at(-2))
+    const endY = Number(last.at(-1))
+    expect(endX).toBeGreaterThanOrEqual(0)
+    expect(endX).toBeLessThanOrEqual(base.width)
+    expect(endY).toBeGreaterThanOrEqual(0)
+    expect(endY).toBeLessThanOrEqual(base.height)
   })
 })

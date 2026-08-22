@@ -2,7 +2,7 @@
 
 import { useRef } from 'react'
 import { animate, onScroll } from 'animejs'
-import { useMotionScope } from './use-motion-scope'
+import { useMotionScope, withWillChange } from './use-motion-scope'
 
 /**
  * Wraps Plan 2's `<ol data-agenda>` timeline. Each `<li>` reveals as it
@@ -21,12 +21,18 @@ export function Evening({ children }: { children: React.ReactNode }) {
 
     items.forEach((item) => {
       const dot = item.querySelector<HTMLElement>('[aria-hidden="true"]')
+      const willChange = withWillChange(item, 'transform, opacity')
+      // No `sync`: this is a one-shot reveal that plays fully on enter, not
+      // a scrubbed animation. Scrubbing left the item's opacity wherever the
+      // scroll happened to stop, so agenda text could rest half-visible.
       animate(item, {
         opacity: [0, 1],
         translateY: [14, 0],
         ease: 'outQuad',
         duration: 600,
-        autoplay: onScroll({ target: item, enter: 'bottom-=12% top', sync: 0.6 }),
+        autoplay: onScroll({ target: item, enter: { target: 'top', container: 'bottom-=12%' } }),
+        onBegin: willChange.onBegin,
+        onComplete: willChange.onComplete,
       })
       if (dot) {
         animate(dot, {
@@ -34,7 +40,7 @@ export function Evening({ children }: { children: React.ReactNode }) {
           ease: 'outBack',
           duration: 400,
           delay: 150,
-          autoplay: onScroll({ target: item, enter: 'bottom-=12% top' }),
+          autoplay: onScroll({ target: item, enter: { target: 'top', container: 'bottom-=12%' } }),
         })
       }
     })

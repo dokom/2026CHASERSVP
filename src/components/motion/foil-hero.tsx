@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useMotionMode } from './motion-provider'
+import { useColorScheme, useMotionMode } from './motion-provider'
 
 /**
  * The ONLY path to three.js. Gated on mode before the dynamic component is
@@ -15,6 +15,7 @@ const FoilScene = dynamic(() => import('./foil-scene').then((m) => m.FoilScene),
 
 export function FoilHero() {
   const mode = useMotionMode()
+  const scheme = useColorScheme()
   if (mode !== 'full') return null
-  return <FoilScene />
+  return <FoilScene scheme={scheme} />
 }

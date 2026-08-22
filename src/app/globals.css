@@ -2,7 +2,9 @@
 
 /* ------------------------------------------------------------------ tokens */
 :root {
-  /* Midnight Gala. Brass is semantic: it marks only what is the guest's own. */
+  /* Literal palette. These never change with theme — they are colours, not
+     roles. --brass is a FILL colour (buttons, progress, marker, dots, focus
+     ring) and stays this exact hex in both schemes by design. */
   --ink:       #0B0F1F;
   --midnight:  #141A33;
   --brass:     #C9A24D;
@@ -11,9 +13,22 @@
   --mist:      #8B90A6;
   --danger:    #D9604F;
   --success:   #7FB98F;
+  /* Label colour on a brass FILL. Brass is dark-ish in both schemes, so the
+     label is always this near-black — never scheme-dependent. */
+  --on-brass:  #0B0F1F;
+
+  /* Semantic roles. These DO change with theme; redefined below per scheme.
+     Defaults here are the dark (ground) state. */
+  --ground:     var(--ink);
+  --surface:    var(--midnight);
+  --text:       var(--bone);
+  --text-muted: var(--mist);
+  /* Brass as TEXT (the guest's name, "Table N"). Brass-the-fill is ~1.9:1 on
+     the light ground, so text uses a darker brass instead of the fill hex. */
+  --brass-ink:  var(--brass);
 
   /* Type scale. Display sizes are fluid; the hero is deliberately enormous. */
-  --text-hero:    clamp(3.25rem, 2rem + 9vw, 8.5rem);
+  --text-hero:    clamp(4.75rem, 2rem + 11vw, 9.5rem);
   --text-display: clamp(2rem, 1.4rem + 3.5vw, 4rem);
   --text-title:   clamp(1.375rem, 1.15rem + 1.2vw, 2rem);
   --text-body:    clamp(1rem, 0.95rem + 0.3vw, 1.125rem);
@@ -21,81 +36,76 @@
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Aliases the admin screens already reference. Keep them in step above. */
-  --color-ink: var(--midnight);
-  --color-ink-deep: var(--ink);
-  --color-bone: var(--bone);
+  /* Aliases the admin screens already reference. Point at the semantic roles
+     (not the literal colours) so admin surfaces track the active scheme. */
+  --color-ink: var(--surface);
+  --color-ink-deep: var(--on-brass);
+  --color-bone: var(--text);
   --color-brass: var(--brass);
   --color-brass-dim: var(--brass-dim);
-  --color-surface: var(--midnight);
+  --color-surface: var(--surface);
   --color-border: #2A3150;
-  --color-text: var(--bone);
-  --color-text-muted: var(--mist);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
   --color-danger: var(--danger);
   --color-success: var(--success);
 }
 
-/* Light theme is a designed theme, not an inversion: warm bone ground, same brass. */
+/* Light theme is a designed theme, not an inversion: warm bone ground, same
+   brass fills. Only the semantic roles move — the literal colours above
+   never do, so their names never mean their opposite. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --ink:       #F4EFE4;
-    --midnight:  #FFFFFF;
-    --bone:      #161A2B;
-    --mist:      #5B6078;
+    --ground:     #F4EFE4;
+    --surface:    #FFFFFF;
+    --text:       #161A2B;
+    --text-muted: #5B6078;
+    /* ~5.54:1 against #F4EFE4 — verified, exceeds the 4.5:1 floor. */
+    --brass-ink:  #7A5A12;
     --color-border: #D9D2C2;
   }
 }
 :root[data-theme="dark"] {
-  --ink:       #0B0F1F;
-  --midnight:  #141A33;
-  --bone:      #EFE9DC;
-  --mist:      #8B90A6;
+  --ground:     var(--ink);
+  --surface:    var(--midnight);
+  --text:       var(--bone);
+  --text-muted: var(--mist);
+  --brass-ink:  var(--brass);
   --color-border: #2A3150;
 }
 
 /* ------------------------------------------------------------------- base */
 body {
-  background: var(--ink);
-  color: var(--bone);
+  background: var(--ground);
+  color: var(--text);
   font-family: var(--font-body), system-ui, sans-serif;
   font-size: var(--text-body);
   -webkit-font-smoothing: antialiased;
 }
 
+/* opsz is size-specific, not a blanket 72: forcing display-weight hairlines
+   onto 20px body serif is exactly the shimmer opsz exists to prevent. Only
+   .type-hero earns the full 72; .font-serif's own default is a body-safe 24. */
 .font-serif,
 .type-display {
   font-family: var(--font-display), "Bodoni Moda", Didot, "Times New Roman", serif;
-  font-variation-settings: "opsz" 72;
   letter-spacing: -0.01em;
   line-height: 1.02;
 }
 
-.type-hero    { font-size: var(--text-hero); }
-.type-display { font-size: var(--text-display); }
+.font-serif   { font-variation-settings: "opsz" 24; }
+.type-hero    { font-size: var(--text-hero); font-variation-settings: "opsz" 72; }
+.type-display { font-size: var(--text-display); font-variation-settings: "opsz" 48; }
 .type-title   { font-size: var(--text-title); font-variation-settings: "opsz" 24; }
 
-/* Engraved-caption eyebrows: small caps, wide tracking. */
+/* Engraved-caption eyebrows: small caps, wide tracking. --text-muted (not the
+   literal --mist) so eyebrows stay legible when the scheme flips. */
 .type-eyebrow {
   font-family: var(--font-body), system-ui, sans-serif;
   font-size: var(--text-eyebrow);
   font-variant-caps: all-small-caps;
   letter-spacing: 0.22em;
-  color: var(--mist);
-}
-
-/* ------------------------------------------------------------------ grain */
-/* Static film grain. Not animated: animated grain costs continuous paint and
-   is the "effects everywhere" failure mode. 6% is visible on a phone without
-   muddying the type. */
-.grain::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  pointer-events: none;
-  opacity: 0.06;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  color: var(--text-muted);
 }
 
 /* --------------------------------------------------------- reduced motion */
@@ -111,28 +121,50 @@ body {
 }
 
 /* Ambient pulse on the guest's own table (Task 8). CSS, not a timeline: it
-   loops, and the reduced-motion backstop above already stops it. The
-   box-shadow is on a 16px element and paints only its own layer — the one
-   deliberate exception to the compositor-only rule, and it is tiny. */
-@keyframes seat-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(201 162 77 / 0.55); }
-  70%      { box-shadow: 0 0 0 14px rgb(201 162 77 / 0); }
+   loops, and the reduced-motion backstop above already stops it. A scaling,
+   fading ring on ::after — transform + opacity only, compositor-only. The
+   marker itself (h-4 w-4, already `position: absolute`) is the containing
+   block, so `inset: 0` sizes the ring to it with no extra markup. */
+@keyframes seat-pulse-ring {
+  0%   { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(3.5); opacity: 0; }
 }
-.seat-pulse { animation: seat-pulse 2.4s ease-out infinite; }
+.seat-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--brass);
+  animation: seat-pulse-ring 2.4s ease-out infinite;
+  pointer-events: none;
+}
 
-/* One-shot brass shimmer after the stamp lands (Task 10). background-position
-   on a text-clipped gradient a few hundred pixels wide — cheap, runs once. */
+/* One-shot brass shimmer after the stamp lands (Task 10). The base text stays
+   fully readable throughout; a translucent brass highlight — duplicated text
+   via attr(), clipped to its own glyphs — sweeps across on ::after using only
+   transform + opacity. `data-shimmer-text` is set by rsvp-form.tsx to the
+   exact confirmation copy so the clip lines up with the real text. */
 @keyframes sealed-shimmer {
-  from { background-position: -200% 0; }
-  to   { background-position: 200% 0; }
+  0%   { transform: translateX(-120%); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
 }
 .sealed-shimmer [data-testid="rsvp-confirmed"] {
-  background: linear-gradient(100deg, var(--bone) 40%, var(--brass) 50%, var(--bone) 60%);
-  background-size: 200% 100%;
+  position: relative;
+}
+.sealed-shimmer [data-testid="rsvp-confirmed"]::after {
+  content: attr(data-shimmer-text);
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  background: linear-gradient(100deg, transparent 40%, var(--brass) 50%, transparent 60%);
+  background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: sealed-shimmer 1.4s ease-out 1 forwards;
+  animation: sealed-shimmer 1.4s var(--ease-out-expo) 1 forwards;
+  pointer-events: none;
 }
 
 /* Visible keyboard focus everywhere, in brass. */

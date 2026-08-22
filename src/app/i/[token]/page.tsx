@@ -46,16 +46,18 @@ export default async function GuestPage({
 
   return (
     <MotionProvider>
-      <main data-guest-root className="grain relative mx-auto max-w-2xl space-y-24 px-6 py-16">
+      <main data-guest-root className="relative mx-auto max-w-2xl space-y-24 px-6 py-16">
         <BrassLine />
         <FoilHero />
 
         <Arrival>
           <section aria-labelledby="welcome" className="relative z-10">
-            <Seal />
+            <Seal initial={primary ? primary.firstName.charAt(0) : undefined} />
             <h1 id="welcome" className="type-display">
-              Welcome,{' '}
-              <span data-guest-name className="type-hero block text-[var(--brass)]">
+              {/* The name is the hero by AREA, not just colour: it floors far
+                  larger than this line, which recedes in both size and tint. */}
+              <span className="type-title block text-[var(--text-muted)]">Welcome, </span>
+              <span data-guest-name className="type-hero block text-[var(--brass-ink)]">
                 {primary ? primary.firstName : invite.label}
               </span>
             </h1>
@@ -66,7 +68,7 @@ export default async function GuestPage({
         </Arrival>
 
         <section aria-labelledby="event" className="relative z-10 space-y-2">
-          <h2 id="event" className="font-serif text-3xl text-[var(--color-text)]">{event.name}</h2>
+          <h2 id="event" className="type-display text-[var(--color-text)]">{event.name}</h2>
           <p>
             <time dateTime={event.startsAt.toISOString()}>
               {new Intl.DateTimeFormat('en-US', {

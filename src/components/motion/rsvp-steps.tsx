@@ -2,7 +2,7 @@
 
 import { useRef } from 'react'
 import { animate, stagger } from 'animejs'
-import { useMotionScope } from './use-motion-scope'
+import { useMotionScope, withWillChange } from './use-motion-scope'
 
 /**
  * Animates the children of whichever step is currently visible. Re-runs when
@@ -24,12 +24,15 @@ export function RsvpSteps({ step, children }: { step: number; children: React.Re
     const targets = active.flatMap((el) => Array.from(el.children) as HTMLElement[])
     if (targets.length === 0) return
 
+    const willChange = withWillChange(targets, 'transform, opacity')
     animate(targets, {
       opacity: [0, 1],
       translateX: [18, 0],
       ease: 'outExpo',
       duration: 520,
       delay: stagger(40),
+      onBegin: willChange.onBegin,
+      onComplete: willChange.onComplete,
     })
   }, [step])
 

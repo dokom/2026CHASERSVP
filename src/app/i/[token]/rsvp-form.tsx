@@ -37,12 +37,21 @@ export function RsvpForm({
   const back = () => setStep((current) => (attending === false && current === 5 ? 1 : current - 1))
 
   if (state.status === 'done') {
+    // Shared between the visible text and data-shimmer-text: the CSS
+    // shimmer overlay clips a duplicated attr() copy of this exact string
+    // over the real glyphs, so the two must always match.
+    const confirmationMessage = state.attending
+      ? 'Thank you — your response is recorded. We look forward to seeing you.'
+      : 'Thank you for letting us know. You will be missed.'
     return (
       <Sealed>
-        <p role="status" data-testid="rsvp-confirmed" className="rounded border border-[var(--color-brass)] p-4">
-          {state.attending
-            ? 'Thank you — your response is recorded. We look forward to seeing you.'
-            : 'Thank you for letting us know. You will be missed.'}
+        <p
+          role="status"
+          data-testid="rsvp-confirmed"
+          data-shimmer-text={confirmationMessage}
+          className="rounded border border-[var(--color-brass)] p-4"
+        >
+          {confirmationMessage}
         </p>
       </Sealed>
     )

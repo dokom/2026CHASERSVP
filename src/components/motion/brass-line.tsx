@@ -8,12 +8,42 @@ import { useMotionMode } from './motion-provider'
 
 const GUTTER_X = 24
 const ACT_IDS = ['welcome', 'event', 'evening', 'seat', 'rsvp'] as const
+/** Vertical breathing room between the drawn line's end and the RSVP act it
+ * terminates just above, so the stroke never crosses into the form. */
+const RSVP_CLEARANCE = 40
+/** How far inside the seal's silhouette the line starts — the broken wax
+ * edge continuing, not a string leaving the seal's centre. */
+const SEAL_EDGE_X_RATIO = 0.22
+const SEAL_EDGE_Y_RATIO = 0.18
+/** Radius of the small terminal seal drawn where the line closes. */
+const TERMINAL_SEAL_RADIUS = 7
 
-type Geometry = { d: string; height: number; width: number }
+type Point = { x: number; y: number }
+type Geometry = { d: string; height: number; width: number; end: Point }
 
 /** Document-relative top of an element, independent of current scroll. */
 function docTop(el: Element): number {
   return el.getBoundingClientRect().top + window.scrollY
+}
+
+/** The point where the drawn line should begin: the seal's lower-right
+ * edge, so the line reads as the seal's own broken edge continuing down the
+ * page rather than a string tied to its centre. */
+function sealEdge(seal: HTMLElement, root: HTMLElement, rootTop: number): Point {
+  const rect = seal.getBoundingClientRect()
+  const rootLeft = root.getBoundingClientRect().left
+  return {
+    x: rect.right - rootLeft - SEAL_EDGE_X_RATIO * rect.width,
+    y: docTop(seal) + rect.height - SEAL_EDGE_Y_RATIO * rect.height - rootTop,
+  }
+}
+
+/** The point where the drawn line should end: just above the RSVP act,
+ * inside the gutter, so it never crosses the form. */
+function rsvpTerminus(root: HTMLElement, rootTop: number, fallbackY: number): Point {
+  const rsvp = root.querySelector<HTMLElement>('#rsvp')
+  const y = rsvp ? docTop(rsvp) - rootTop - RSVP_CLEARANCE : fallbackY
+  return { x: GUTTER_X, y }
 }
 
 function measure(root: HTMLElement): Geometry | null {
@@ -44,28 +74,21 @@ function measure(root: HTMLElement): Geometry | null {
   // undefined on SVGSVGElement, which would poison this whole path with NaN.
   // getBoundingClientRect() works on any Element and is already used above.
   const seal = root.querySelector<HTMLElement>('[data-seal]')
-  const sealX = seal
-    ? seal.getBoundingClientRect().left + seal.getBoundingClientRect().width / 2 - root.getBoundingClientRect().left
-    : width / 2
-  const sealY = seal ? docTop(seal) + seal.getBoundingClientRect().height / 2 - rootTop : 120
+  const start = seal ? sealEdge(seal, root, rootTop) : { x: width / 2, y: 120 }
+  const end = rsvpTerminus(root, rootTop, height - 80)
 
   return {
     width,
     height,
-    d: buildBrassPath({
-      gutterX: GUTTER_X,
-      width,
-      start: { x: sealX, y: sealY },
-      anchors,
-      end: { x: width / 2, y: height - 80 },
-    }),
+    end,
+    d: buildBrassPath({ gutterX: GUTTER_X, width, height, start, anchors, end }),
   }
 }
 
 /**
  * The signature: one continuous brass line, drawn by scroll, from the opening
- * seal to the closing one. Absolutely positioned over the guest <main>, which
- * must be `position: relative`.
+ * seal to a small terminal seal glyph just above the RSVP act. Absolutely
+ * positioned over the guest <main>, which must be `position: relative`.
  *
  * In reduced mode the path renders fully drawn — the SVG's natural state —
  * and no timeline is created at all.
@@ -75,16 +98,24 @@ export function BrassLine() {
   const pathRef = useRef<SVGPathElement>(null)
   const [geometry, setGeometry] = useState<Geometry | null>(null)
 
-  // Measure after layout, and again whenever the page reflows. Reflow is a
-  // layout event we respond to, not something we animate.
+  // Measure after layout, and again whenever the page reflows. The
+  // ResizeObserver callback only schedules a rAF-deferred measurement so it
+  // never forces synchronous layout from inside the observer's own callback.
   useEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-guest-root]')
     if (!root) return undefined
     const update = () => setGeometry(measure(root))
     update()
-    const observer = new ResizeObserver(update)
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(update)
+    })
     observer.observe(root)
-    return () => observer.disconnect()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
   }, [])
 
   useMotionScope(() => {
@@ -98,8 +129,8 @@ export function BrassLine() {
       ease: 'linear',
       autoplay: onScroll({
         target: root,
-        enter: 'top top',
-        leave: 'bottom bottom',
+        enter: { container: 'top', target: 'top' },
+        leave: { container: 'bottom', target: 'bottom' },
         sync: 0.35,
       }),
     })
@@ -125,6 +156,18 @@ export function BrassLine() {
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
+      {/* The line closes into a seal again, not a dangling end. */}
+      <g data-brass-terminal-seal>
+        <circle cx={geometry.end.x} cy={geometry.end.y} r={TERMINAL_SEAL_RADIUS - 2} fill="var(--brass)" />
+        <circle
+          cx={geometry.end.x}
+          cy={geometry.end.y}
+          r={TERMINAL_SEAL_RADIUS}
+          fill="none"
+          stroke="var(--brass-dim)"
+          strokeWidth={1.25}
+        />
+      </g>
     </svg>
   )
 }

@@ -57,9 +57,30 @@ async function restoreFixtureState(): Promise<void> {
 
 test.beforeAll(restoreFixtureState)
 
+/**
+ * Every test below pins its own pixel dimensions with page.setViewportSize
+ * — the whole point of a visual regression suite that asserts specific
+ * breakpoints. setViewportSize overrides the viewport but NOT the device
+ * scale factor or UA that playwright.config.ts's 'mobile' (Pixel 7) and
+ * 'desktop' (Desktop Chrome) projects otherwise set up, and nothing this
+ * page renders is conditioned on touch/hover/UA — so both projects were
+ * producing byte-identical PNGs (md5-verified) for every one of these
+ * tests, just under two different filenames. Keep 'desktop' (DSF 1,
+ * non-touch — the standard project) as the single source of truth and skip
+ * the redundant run rather than doubling CI time and the snapshot count for
+ * zero additional signal.
+ */
+function skipRedundantProject(testInfo: import('@playwright/test').TestInfo): void {
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'byte-identical to the desktop baseline — see comment above skipRedundantProject',
+  )
+}
+
 for (const width of WIDTHS) {
   for (const scheme of SCHEMES) {
-    test(`guest page — ${width}px, ${scheme}`, async ({ page }) => {
+    test(`guest page — ${width}px, ${scheme}`, async ({ page }, testInfo) => {
+      skipRedundantProject(testInfo)
       await page.setViewportSize({ width, height: 900 })
       await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: scheme })
       await page.goto(`/i/${E2E_GUEST_TOKEN}`)
@@ -73,7 +94,8 @@ for (const width of WIDTHS) {
   }
 }
 
-test('admin event screen — 1440px, dark', async ({ page }) => {
+test('admin event screen — 1440px, dark', async ({ page }, testInfo) => {
+  skipRedundantProject(testInfo)
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' })
   await signIn(page, ADMIN_CREDENTIALS.email, ADMIN_CREDENTIALS.password)

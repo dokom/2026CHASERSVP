@@ -6,6 +6,7 @@ import {
   Points, Scene, ShaderMaterial, WebGLRenderer,
 } from 'three'
 import { journey } from '@/lib/motion/journey'
+import type { ColorScheme } from './motion-provider'
 
 const COUNT = 800
 const BRASS = new Color('#C9A24D')
@@ -46,6 +47,21 @@ const FRAGMENT = /* glsl */ `
   }
 `
 
+/**
+ * AdditiveBlending is what makes the flecks read as glowing foil against the
+ * dark ground — on a light (bone) ground the same blend mode sums
+ * light-on-light and washes out into a yellow smear. Switch to normal
+ * blending, the dimmer brass token, and a third of the alpha so flecks read
+ * as darker foil on a light card instead.
+ */
+function applySchemeToMaterial(material: ShaderMaterial, scheme: ColorScheme): void {
+  const isLight = scheme === 'light'
+  material.blending = isLight ? NormalBlending : AdditiveBlending
+  material.uniforms.uColor!.value = isLight ? BRASS_DIM : BRASS
+  material.uniforms.uAlphaScale!.value = isLight ? LIGHT_ALPHA_SCALE : 1
+  material.needsUpdate = true
+}
+
 function buildGeometry(): BufferGeometry {
   const positions = new Float32Array(COUNT * 3)
   const seeds = new Float32Array(COUNT)
@@ -67,8 +83,9 @@ function buildGeometry(): BufferGeometry {
  * context left running off-screen is exactly the battery drain the spec's
  * motion rails forbid.
  */
-export function FoilScene() {
+export function FoilScene({ scheme }: { scheme: ColorScheme }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const materialRef = useRef<ShaderMaterial | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -94,35 +111,10 @@ export function FoilScene() {
         uAlphaScale: { value: 1 },
       },
     })
+    materialRef.current = material
+    applySchemeToMaterial(material, scheme)
     const points = new Points(buildGeometry(), material)
     scene.add(points)
-
-    /**
-     * AdditiveBlending is what makes the flecks read as glowing foil against
-     * the dark ground — on a light (bone) ground the same blend mode sums
-     * light-on-light and washes out into a yellow smear. Switch to normal
-     * blending, the dimmer brass token, and a third of the alpha so flecks
-     * read as darker foil on a light card instead.
-     *
-     * `matchMedia` here is a deliberate, narrow exception to "motion mode is
-     * decided once by MotionProvider, no component reads matchMedia on its
-     * own" (globals constraint): this is a colour-scheme query, not a
-     * device-tier or motion-mode decision, and it is scoped entirely to this
-     * component's own shader uniforms. It's safe only because FoilScene is
-     * already dynamically imported with `ssr: false` and gated to `full`
-     * motion mode — it never runs on the server and never runs when motion
-     * is reduced or lite.
-     */
-    const scheme = window.matchMedia('(prefers-color-scheme: light)')
-    const applyScheme = (isLight: boolean) => {
-      material.blending = isLight ? NormalBlending : AdditiveBlending
-      material.uniforms.uColor!.value = isLight ? BRASS_DIM : BRASS
-      material.uniforms.uAlphaScale!.value = isLight ? LIGHT_ALPHA_SCALE : 1
-      material.needsUpdate = true
-    }
-    applyScheme(scheme.matches)
-    const onSchemeChange = (event: MediaQueryListEvent) => applyScheme(event.matches)
-    scheme.addEventListener('change', onSchemeChange)
 
     const resize = () => {
       const { clientWidth, clientHeight } = canvas
@@ -162,14 +154,21 @@ export function FoilScene() {
     return () => {
       cancelAnimationFrame(frame)
       document.removeEventListener('visibilitychange', onVisibility)
-      scheme.removeEventListener('change', onSchemeChange)
       io.disconnect()
       ro.disconnect()
+      materialRef.current = null
       points.geometry.dispose()
       material.dispose()
       renderer.dispose()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scene setup/teardown runs once; scheme changes are applied by the effect below
   }, [])
+
+  useEffect(() => {
+    const material = materialRef.current
+    if (!material) return
+    applySchemeToMaterial(material, scheme)
+  }, [scheme])
 
   return (
     <canvas

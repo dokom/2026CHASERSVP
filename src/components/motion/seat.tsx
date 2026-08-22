@@ -2,7 +2,7 @@
 
 import { useRef } from 'react'
 import { animate, onScroll } from 'animejs'
-import { useMotionScope } from './use-motion-scope'
+import { useMotionScope, withWillChange } from './use-motion-scope'
 
 export function SeatAct({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -23,15 +23,18 @@ export function SeatAct({ children }: { children: React.ReactNode }) {
     // zoom never started because 'top bottom-=20%' asked for the section's
     // own bottom-20% point to reach the *viewport's* top, which this short
     // section never scrolls far enough to satisfy).
+    const willChange = withWillChange(map, 'transform')
     animate(map, {
       scale: [1, 1.55],
       ease: 'outQuad',
       autoplay: onScroll({
         target: root,
         enter: { target: 'top', container: 'bottom-=20%' },
-        leave: 'center center',
+        leave: { target: 'center', container: 'center' },
         sync: 0.5,
       }),
+      onBegin: willChange.onBegin,
+      onComplete: willChange.onComplete,
     })
   })
 
