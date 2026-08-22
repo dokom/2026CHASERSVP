@@ -46,13 +46,21 @@ export default async function GuestPage({
 
   return (
     <MotionProvider>
-      <main data-guest-root className="relative mx-auto max-w-2xl space-y-24 px-6 py-16">
+      <main data-guest-root className="relative mx-auto max-w-2xl overflow-x-clip space-y-24 px-6 py-16">
         <BrassLine />
         <FoilHero />
 
         <Arrival>
-          <section aria-labelledby="welcome" className="relative z-10">
-            <Seal initial={primary ? primary.firstName.charAt(0) : undefined} />
+          {/* The seal's own channel, left of the text column: a fixed-width
+              marker flush with <main>'s content edge, then pulled back by
+              exactly half its width so the seal centres at roughly x=24 of
+              <main> regardless of its rendered size — not mx-auto'd across
+              the whole page. `overflow-x-clip` on <main> lets it bleed past
+              the edge without opening a horizontal scrollbar. */}
+          <div className="relative w-40 -ml-20">
+            <Seal initial={primary ? primary.firstName.charAt(0) : undefined} size="lg" />
+          </div>
+          <section aria-labelledby="welcome" className="relative z-10 pl-12">
             <h1 id="welcome" className="type-display">
               {/* The name is the hero by AREA, not just colour: it floors far
                   larger than this line, which recedes in both size and tint. */}
@@ -67,7 +75,7 @@ export default async function GuestPage({
           </section>
         </Arrival>
 
-        <section aria-labelledby="event" className="relative z-10 space-y-2">
+        <section aria-labelledby="event" className="relative z-10 space-y-2 pl-12">
           <h2 id="event" className="type-display text-[var(--color-text)]">{event.name}</h2>
           <p>
             <time dateTime={event.startsAt.toISOString()}>
@@ -85,7 +93,7 @@ export default async function GuestPage({
 
         {event.agendaItems.length > 0 ? (
           <Evening>
-            <section aria-labelledby="evening" className="relative z-10 space-y-6">
+            <section aria-labelledby="evening" className="relative z-10 space-y-6 pl-12">
               <h2 id="evening" className="font-serif text-3xl">The evening</h2>
               <AgendaTimeline items={event.agendaItems} timezone={event.timezone} />
             </section>
@@ -94,14 +102,14 @@ export default async function GuestPage({
 
         {table ? (
           <SeatAct>
-            <section aria-labelledby="seat" className="relative z-10 space-y-4">
+            <section aria-labelledby="seat" className="relative z-10 space-y-4 pl-12">
               <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
               <SeatMap floorplanAssetId={event.floorplanAssetId} marker={marker} table={table} />
             </section>
           </SeatAct>
         ) : null}
 
-        <section aria-labelledby="rsvp" className="relative z-10 space-y-4">
+        <section aria-labelledby="rsvp" className="relative z-10 space-y-4 pl-12">
           <h2 id="rsvp" className="font-serif text-3xl">Your response</h2>
           {window.isOpen ? (
             <RsvpForm token={token} invite={invite} mealOptions={event.mealOptions} csrf={csrf} />

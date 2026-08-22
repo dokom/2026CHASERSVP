@@ -94,6 +94,32 @@ for (const width of WIDTHS) {
   }
 }
 
+/**
+ * Every baseline above pins prefers-reduced-motion: reduce, so no pixel test
+ * ever renders a running timeline — a real defect in a scroll trigger, an
+ * easing curve, or a one-shot reveal's final frame could regress invisibly.
+ * This is the one full-motion baseline: no reduced-motion override, scrolled
+ * to the bottom and settled so the one-shot reveals (name letters, seal
+ * break, agenda stagger) have finished before the shot. The foil hero lives
+ * at the top of the page and pauses its rAF loop once scrolled off-screen
+ * (see foil-scene.tsx's IntersectionObserver gate), so the bottom of the
+ * page is the deterministic frame to capture in full motion.
+ */
+test('guest page — 375px, dark, full motion', async ({ page }, testInfo) => {
+  skipRedundantProject(testInfo)
+  await page.setViewportSize({ width: 375, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' })
+  await page.goto(`/i/${E2E_GUEST_TOKEN}`)
+  await expect(page.locator('[data-motion]')).toHaveAttribute('data-motion', 'full')
+  await page.waitForLoadState('networkidle')
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await page.waitForTimeout(1200)
+  await expect(page).toHaveScreenshot('guest-375-dark-full-motion.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  })
+})
+
 test('admin event screen — 1440px, dark', async ({ page }, testInfo) => {
   skipRedundantProject(testInfo)
   await page.setViewportSize({ width: 1440, height: 900 })

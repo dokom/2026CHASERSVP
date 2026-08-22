@@ -73,6 +73,22 @@
   --brass-ink:  var(--brass);
   --color-border: #2A3150;
 }
+/* Mirrors the `prefers-color-scheme: light` block above exactly. Needed
+   because MotionProvider honours an explicit data-theme="light" choice even
+   when the OS itself prefers dark — without this block, that visitor's
+   media query never matches (`prefers-color-scheme: light` is false), so
+   they would silently fall through to the dark :root defaults, right where
+   the foil flecks are colour-blended for a light ground. Same source-order
+   placement as [data-theme="dark"] above so the explicit attribute always
+   wins over the media query. */
+:root[data-theme="light"] {
+  --ground:     #F4EFE4;
+  --surface:    #FFFFFF;
+  --text:       #161A2B;
+  --text-muted: #5B6078;
+  --brass-ink:  #7A5A12;
+  --color-border: #D9D2C2;
+}
 
 /* ------------------------------------------------------------------- base */
 body {

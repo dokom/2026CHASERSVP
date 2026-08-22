@@ -68,7 +68,10 @@ describe('buildBrassPath', () => {
     const d = buildBrassPath(straightDown)
     const commands = d.match(/C ([^C]+)/g) ?? []
     expect(commands.length).toBeGreaterThan(0)
-    for (const cmd of commands) {
+    // The final segment is checked separately below (it drifts to zero on
+    // purpose, straight down the channel into the terminal seal), so this
+    // sideways-bow check only applies to the segments before it.
+    for (const cmd of commands.slice(0, -1)) {
       const nums = cmd
         .replace('C', '')
         .trim()
@@ -93,5 +96,63 @@ describe('buildBrassPath', () => {
     expect(endX).toBeLessThanOrEqual(base.width)
     expect(endY).toBeGreaterThanOrEqual(0)
     expect(endY).toBeLessThanOrEqual(base.height)
+  })
+
+  // Q1: the terminus must not lasso — the final approach to the terminal
+  // seal carries no drift, so both of its control points share x with the
+  // segment's own start and end points (a straight run down the channel).
+  it('approaches the terminal seal straight, with no drift on the final segment', () => {
+    const d = buildBrassPath(base)
+    const commands = d.match(/C ([^C]+)/g) ?? []
+    const lastCmd = commands.at(-1)!
+    const nums = lastCmd.replace('C', '').trim().split(/[\s,]+/).map(Number)
+    const [c1x, , c2x, , endX] = nums
+    // Segment runs from the previous anchor's x (240, the table bend, after
+    // its return-to-gutter hop) to the end's x (187 in `base`).
+    expect(c1x).toBeCloseTo(24, 0) // returned to gutterX before the final hop
+    expect(c2x).toBeCloseTo(endX!, 0)
+  })
+
+  it('final segment control points share x with the seal-to-seal endpoints when both sit on the gutter', () => {
+    const straightDown = {
+      gutterX: 24,
+      width: 375,
+      height: 2000,
+      start: { x: 24, y: 100 },
+      anchors: [{ y: 500 }, { y: 900 }],
+      end: { x: 24, y: 1700 },
+    }
+    const d = buildBrassPath(straightDown)
+    const commands = d.match(/C ([^C]+)/g) ?? []
+    const lastCmd = commands.at(-1)!
+    const nums = lastCmd.replace('C', '').trim().split(/[\s,]+/).map(Number)
+    const [c1x, , c2x] = nums
+    expect(c1x).toBeCloseTo(24, 0)
+    expect(c2x).toBeCloseTo(24, 0)
+  })
+
+  // Q2: the line's full horizontal envelope (gutter plus drift) must stay
+  // within the brass-line channel — x = 4..44 for a 375-wide guest column
+  // with gutterX = 24 — so it can never cross into act heading glyphs
+  // padded to start at x >= 48.
+  it('keeps every emitted x, including control points, within the [4,44] channel for gutter-only anchors', () => {
+    const gutterOnly = {
+      gutterX: 24,
+      width: 375,
+      height: 3200,
+      start: { x: 24, y: 120 },
+      anchors: [{ y: 600 }, { y: 1200 }, { y: 1800 }, { y: 2400 }],
+      end: { x: 24, y: 3000 },
+    }
+    const d = buildBrassPath(gutterOnly)
+    const allNumberPairs = d
+      .replace(/^M/, '')
+      .split(/[MC]/)
+      .filter(Boolean)
+      .flatMap((seg) => seg.trim().split(',').map((pair) => pair.trim().split(/\s+/).map(Number)))
+    for (const [x] of allNumberPairs) {
+      expect(x).toBeGreaterThanOrEqual(4)
+      expect(x).toBeLessThanOrEqual(44)
+    }
   })
 })

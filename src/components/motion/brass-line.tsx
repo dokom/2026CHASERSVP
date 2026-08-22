@@ -11,10 +11,9 @@ const ACT_IDS = ['welcome', 'event', 'evening', 'seat', 'rsvp'] as const
 /** Vertical breathing room between the drawn line's end and the RSVP act it
  * terminates just above, so the stroke never crosses into the form. */
 const RSVP_CLEARANCE = 40
-/** How far inside the seal's silhouette the line starts — the broken wax
- * edge continuing, not a string leaving the seal's centre. */
-const SEAL_EDGE_X_RATIO = 0.22
-const SEAL_EDGE_Y_RATIO = 0.18
+/** How far inside the seal's lower edge the line starts, as a fraction of
+ * the seal's height — nestled into the wax, not dangling off the rim. */
+const SEAL_EDGE_Y_RATIO = 0.08
 /** Radius of the small terminal seal drawn where the line closes. */
 const TERMINAL_SEAL_RADIUS = 7
 
@@ -26,14 +25,15 @@ function docTop(el: Element): number {
   return el.getBoundingClientRect().top + window.scrollY
 }
 
-/** The point where the drawn line should begin: the seal's lower-right
- * edge, so the line reads as the seal's own broken edge continuing down the
- * page rather than a string tied to its centre. */
+/** The point where the drawn line should begin: the seal's lower edge,
+ * centred on its width, so the line runs straight down into the channel as
+ * the seal's own broken edge continuing rather than a string tied off to
+ * one side. */
 function sealEdge(seal: HTMLElement, root: HTMLElement, rootTop: number): Point {
   const rect = seal.getBoundingClientRect()
   const rootLeft = root.getBoundingClientRect().left
   return {
-    x: rect.right - rootLeft - SEAL_EDGE_X_RATIO * rect.width,
+    x: rect.left + rect.width / 2 - rootLeft,
     y: docTop(seal) + rect.height - SEAL_EDGE_Y_RATIO * rect.height - rootTop,
   }
 }
@@ -74,7 +74,7 @@ function measure(root: HTMLElement): Geometry | null {
   // undefined on SVGSVGElement, which would poison this whole path with NaN.
   // getBoundingClientRect() works on any Element and is already used above.
   const seal = root.querySelector<HTMLElement>('[data-seal]')
-  const start = seal ? sealEdge(seal, root, rootTop) : { x: width / 2, y: 120 }
+  const start = seal ? sealEdge(seal, root, rootTop) : { x: GUTTER_X, y: 120 }
   const end = rsvpTerminus(root, rootTop, height - 80)
 
   return {

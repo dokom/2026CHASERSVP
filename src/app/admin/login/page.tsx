@@ -20,7 +20,7 @@ export default async function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
-      <h1 className="mb-8 font-serif text-3xl text-[var(--color-brass)]">Gala Admin</h1>
+      <h1 className="mb-8 font-serif text-3xl text-[var(--brass-ink)]">Gala Admin</h1>
       <LoginForm csrf={csrf}>
         <Field label="Email" name="email" type="email" required autoComplete="username" />
         <Field label="Password" name="password" type="password" required autoComplete="current-password" />

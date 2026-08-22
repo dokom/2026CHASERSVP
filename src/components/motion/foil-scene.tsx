@@ -160,6 +160,10 @@ export function FoilScene({ scheme }: { scheme: ColorScheme }) {
       points.geometry.dispose()
       material.dispose()
       renderer.dispose()
+      // dispose() alone frees Three's own GPU resources but leaves the
+      // underlying WebGL context alive; without forcing its loss here the
+      // context leaks across client-side navigations between guest pages.
+      renderer.forceContextLoss()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scene setup/teardown runs once; scheme changes are applied by the effect below
   }, [])

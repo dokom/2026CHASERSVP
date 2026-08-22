@@ -18,13 +18,17 @@ const clamp = (n: number, max: number) => Math.min(Math.max(n, 0), max)
  * Lateral drift alternates sign by segment index so the stroke bows
  * sideways instead of plotting a dead-straight vertical — even when
  * consecutive anchors share the gutter x, where a purely-vertical-handle
- * curve would otherwise degenerate into a ruled line. Roughly ±6% of the
- * page width per act. Index-based, so it is fully deterministic — no
- * randomness at runtime.
+ * curve would otherwise degenerate into a ruled line. Capped at 5% of the
+ * page width or 18px, whichever is smaller, so the line's full envelope
+ * (gutter plus drift) never leaves the guest content's left channel and
+ * can never cross into a heading's glyphs. Index-based, so it is fully
+ * deterministic — no randomness at runtime.
  */
-const DRIFT_RATIO = 0.06
+const DRIFT_RATIO = 0.05
+const DRIFT_CAP = 18
 function driftFor(index: number, width: number): number {
-  return (index % 2 === 0 ? 1 : -1) * width * DRIFT_RATIO
+  const magnitude = Math.min(width * DRIFT_RATIO, DRIFT_CAP)
+  return (index % 2 === 0 ? 1 : -1) * magnitude
 }
 
 /** A single "x y" pair, clamped into the [0,width] x [0,height] canvas. */
@@ -89,7 +93,10 @@ export function buildBrassPath(input: BrassPathInput): string {
     }
   }
 
+  // The final approach to the terminal seal carries no drift: a slip past
+  // the seal and a hook back reads as missing the close, not completing it.
+  // Zero drift means both control points share their endpoint's x exactly.
   const endX = end.x ?? gutterX
-  parts.push(curveTo(cx, cy, endX, end.y, driftFor(segment, width), width, height))
+  parts.push(curveTo(cx, cy, endX, end.y, 0, width, height))
   return parts.join(' ')
 }

@@ -13,7 +13,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="min-h-screen">
       <header className="border-b border-[var(--color-border)] px-4 py-3">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
-          <span className="font-serif text-lg text-[var(--color-brass)]">Gala Admin</span>
+          <span className="font-serif text-lg text-[var(--brass-ink)]">Gala Admin</span>
           <AdminNav role={user.role} />
           <form action={logoutAction}>
             <CsrfInput />

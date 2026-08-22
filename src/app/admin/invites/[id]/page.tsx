@@ -76,7 +76,7 @@ export default async function InviteDetailPage({
           <p className="mb-1 text-sm text-[var(--color-text-muted)]">
             New invite link — copy it now, it will not be shown again.
           </p>
-          <code data-testid="invite-url" className="break-all text-sm text-[var(--color-brass)]">
+          <code data-testid="invite-url" className="break-all text-sm text-[var(--brass-ink)]">
             {revealUrl}
           </code>
           <Script id={`invite-reveal-seen-${invite.id}`} strategy="afterInteractive">
