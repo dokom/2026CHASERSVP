@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto'
 
 export class SealError extends Error {
   constructor(message: string) {
@@ -9,18 +9,24 @@ export class SealError extends Error {
 
 const VERSION = 'v1'
 const IV_BYTES = 12
+const TAG_BYTES = 16
 const KEY_BYTES = 32
-/** Fixed salt: the secret is already high-entropy, and a per-value salt would
- *  force a scrypt derivation on every read. */
+/** Fixed salt: this vault uses a single high-entropy application secret with
+ *  no multi-tenant key separation requirement, so a shared salt is safe. */
 const SALT = 'gala-rsvp-token-vault'
 
 const keyCache = new Map<string, Buffer>()
 
+function cacheKeyFor(secret: string): string {
+  return createHash('sha256').update(secret, 'utf8').digest('hex')
+}
+
 export function deriveKey(secret: string): Buffer {
-  const cached = keyCache.get(secret)
+  const cacheKey = cacheKeyFor(secret)
+  const cached = keyCache.get(cacheKey)
   if (cached) return cached
   const key = scryptSync(secret, SALT, KEY_BYTES)
-  keyCache.set(secret, key)
+  keyCache.set(cacheKey, key)
   return key
 }
 
@@ -41,15 +47,21 @@ export function open(sealed: string, secret: string): string {
   if (parts.length !== 4) throw new SealError('Malformed sealed value')
 
   const [version, ivPart, tagPart, dataPart] = parts as [string, string, string, string]
-  if (version !== VERSION) throw new SealError(`Unsupported seal version: ${version}`)
+  if (version !== VERSION) throw new SealError('Unsupported seal version')
+
+  const iv = Buffer.from(ivPart, 'base64url')
+  const authTag = Buffer.from(tagPart, 'base64url')
+  // Reject non-standard-length envelopes before decrypting. Node's
+  // setAuthTag() accepts 4/8/12-16 byte GCM tags by default, which would
+  // otherwise let a truncated tag reduce forgery to trivial work.
+  if (iv.length !== IV_BYTES) throw new SealError('Invalid IV length')
+  if (authTag.length !== TAG_BYTES) throw new SealError('Invalid auth tag length')
 
   try {
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      deriveKey(secret),
-      Buffer.from(ivPart, 'base64url'),
-    )
-    decipher.setAuthTag(Buffer.from(tagPart, 'base64url'))
+    const decipher = createDecipheriv('aes-256-gcm', deriveKey(secret), iv, {
+      authTagLength: TAG_BYTES,
+    })
+    decipher.setAuthTag(authTag)
     return Buffer.concat([
       decipher.update(Buffer.from(dataPart, 'base64url')),
       decipher.final(),
