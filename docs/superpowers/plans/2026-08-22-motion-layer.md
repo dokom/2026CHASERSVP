@@ -1859,6 +1859,16 @@ its own on first run."
 | `src/components/motion/foil-scene.tsx` (Task 6) | `AdditiveBlending` on the light theme's bone ground produced a bright yellow smear across the hero. Light scheme now uses normal blending with darker, fainter flecks; the component reads `matchMedia` for the scheme — the one sanctioned exception to "only MotionProvider reads media queries", because it is already browser-only and mode-gated. | the file |
 | `src/app/i/[token]/page.tsx`, `agenda-timeline.tsx` (Tasks 7, 11) | The event title and the agenda times shipped in brass, against the design plan's central rule. Title is bone, times are mist. | the files |
 
+| `src/app/globals.css` (Task 1) | Three review rounds rewrote the token system: literal colours (`--ink`, `--bone`, …) are now separate from semantic roles (`--ground`, `--text`, `--brass-ink`, `--on-brass`); the light theme has an explicit `[data-theme="light"]` block; `opsz` defaults to 24 with 72 on the hero only; `.grain` is gone; `seat-pulse` and `sealed-shimmer` animate `transform`/`opacity` on `::after`. | the file |
+| `src/lib/motion/brass-path.ts` (Task 4) | Vertical handles degenerated to a straight rule between gutter anchors, and drift on the final segment made the terminus hook back. Now a per-act lateral drift capped at `min(5% width, 18px)` so the envelope stays within the 4–44px channel, none on the last segment. | the file |
+| `src/components/motion/brass-line.tsx` (Task 4) | Ended at `{width/2, height-80}`, off-canvas across the RSVP radios. Now terminates above `#rsvp` in a rendered terminal seal glyph (`data-brass-terminal-seal`); starts from the seal's lower edge; measures inside `requestAnimationFrame`. | the file |
+| `src/components/motion/seal.tsx` (Task 5) | A perfect disc read as a balloon, then a polygon read as a badge. Now an organic pressed-wax outline with an off-centre emboss, an optional `initial` monogram and a `size` prop; positioned by the page in the line's channel, not centred. | the file |
+| `src/app/i/[token]/page.tsx` (Task 11) | Act sections pad left 3rem so the line has its own channel and never crosses a glyph — the plan's "content hangs off the line" layout, built only on the third pass. | the file |
+| `src/components/motion/motion-provider.tsx`, `foil-scene.tsx` (Tasks 3, 6) | The scene read `matchMedia` itself and ignored the `data-theme` override. The provider now resolves the scheme (attribute first) and exposes `useColorScheme()`; the scene takes it as a prop and calls `forceContextLoss()` on dispose. | the files |
+| `src/components/motion/evening.tsx` (Task 7) | Scrubbed opacity with `sync`, so agenda items rested half-visible wherever the scroll stopped. One-shot now. | the file |
+| `use-motion-scope.ts` (Task 3) | The `will-change` rail was specified and never built. `withWillChange()` now applies it on timeline begin and clears it on complete. | the file |
+| `tests/e2e/motion.spec.ts`, `visual.spec.ts` (Tasks 12–13) | The line test parsed an unanimated path as `0` and could not fail; the hidden-tab test had no positive control; mobile and desktop baselines were byte-identical. All rewritten; one project; one full-motion baseline added. | the files |
+
 ### What the plan got right that is worth keeping
 
 The "look at it" steps. Both line-drawing bugs above were invisible to typecheck, lint, 376
