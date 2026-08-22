@@ -6018,6 +6018,39 @@ git commit -m "ci: verification pipeline with coverage gate"
 
 ---
 
+---
+
+## AS-BUILT DIVERGENCES — read before re-running any task from this plan
+
+The code in this plan is the code that was *dispatched*. Several modules changed after
+review found defects, and **the working tree is now the source of truth, not this document**.
+Re-running a task below from the plan text would faithfully reintroduce a fixed bug.
+
+| Module | Plan text is stale because | Read instead |
+| --- | --- | --- |
+| `src/lib/invites/csv.ts` (Task 18) | Row numbers counted post-filter array index, so a blank line shifted every later row number. An import error report pointed the operator at the wrong spreadsheet row. | the file |
+| `src/lib/audit.ts` (Task 9) | `redact()` was depth-1 only, so `meta.after.token` wrote a live invite token to the audit table. Also unbounded, so an oversized meta could throw inside the caller's transaction and roll back the mutation it was recording. Now recurses with depth/node caps, cycle protection, size caps, and returns a JSON-safe type by construction. | the file |
+| `src/lib/crypto/secret-box.ts` (Task 4a) | `open()` accepted truncated GCM auth tags — Node permits 4-byte tags by default, cutting forgery to ~2^32 work. Now requires exactly 16 bytes, checked before decrypting. | the file |
+| `src/lib/crypto/password.ts` (Task 5) | No maximum length (argon2 DoS on the login route), silent catch, and an ambient-const-enum import that `isolatedModules` rejects. | the file |
+| `src/lib/auth/csrf.ts` (Task 11) | Rewritten twice: Web Crypto for the Edge runtime, then a hand-rolled constant-time compare to drop `node:crypto` entirely. A top-level `node:crypto` import 500s every `/admin` request. | the file |
+| `src/lib/auth/session.ts` (Task 7) | `destroySession` swallowed delete errors, so logout could report success while the session stayed valid for 12h. | the file |
+| `src/lib/admin-users/repository.ts` (Task 14) | The last-owner guard was a READ inside the transaction. MongoDB only detects write conflicts on documents both transactions WRITE, so two concurrent demotions of different owners both committed, leaving zero owners. Now a WRITE, with a documented single retry. | the file |
+| `CsrfInput`, `login/page.tsx`, import page (Tasks 12/15/19) | All called `cookies().set()` during a Server Component render, which Next.js forbids — a production 500 invisible to every unit and integration test. `src/middleware.ts` now bootstraps the cookie once for all `/admin/*`. | the files |
+
+### Defects this plan contained, for whoever writes Plan 2
+
+Five were found by implementers or reviewers, none by my own spec self-review. Every one was
+an inconsistency **between two parts of the plan**, not a mismatch against the spec:
+
+1. CSV row numbering — implementation vs. its own stated requirement
+2. The rollback test — its failure trigger vs. the database it runs on (MongoDB has no column length limit, so the oversized-string trigger would never fire and the test would silently stop testing rollback)
+3. A search fixture — the fixture vs. the assertion it was meant to prove
+4. `cookies().set()` — code vs. the runtime it executes in, in four separate places
+5. `resetPasswordAction` — declared in the interfaces block, never wired into the page
+
+The self-review checked each section against the spec. It never checked sections against each
+other. That is where all five lived.
+
 ## Definition of done
 
 Plan 1 is complete when all of the following are true:
