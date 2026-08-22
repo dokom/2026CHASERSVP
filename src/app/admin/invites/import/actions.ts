@@ -1,19 +1,32 @@
 'use server'
 
+import { z } from 'zod'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { requireCsrf, requireRole } from '@/lib/auth/guard'
-import { parseInviteCsv, type ParsedRow, type ImportRow } from '@/lib/invites/csv'
+import { parseInviteCsv, type ParsedRow } from '@/lib/invites/csv'
 import { commitInviteImport, MAX_IMPORT_ROWS } from '@/lib/invites/import'
+import { importRowSchema } from '@/lib/validation/invites'
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
+
+// Re-validates the entire decoded commit payload — the preview and the
+// commit are two separate requests, and nothing carries integrity between
+// them. A row edited in devtools between those requests (out-of-range
+// seats, a missing name, a malformed email, a duplicate) must fail here
+// rather than reach `commitInviteImport` as a bare cast.
+const importRowsSchema = z.array(importRowSchema).max(MAX_IMPORT_ROWS)
 
 export type PreviewState = {
   headerErrors: string[]
   rows: ParsedRow[]
   payload: string
 } | null
+
+function failImport(message: string): never {
+  redirect(`/admin/invites/import?error=${encodeURIComponent(message)}`)
+}
 
 export async function validateCsvAction(
   _prev: PreviewState,
@@ -50,16 +63,19 @@ export async function commitCsvAction(formData: FormData): Promise<void> {
   await requireCsrf(formData)
 
   const payload = String(formData.get('payload') ?? '[]')
-  let rows: ImportRow[]
+  let decoded: unknown
   try {
-    const decoded: unknown = JSON.parse(payload)
-    if (!Array.isArray(decoded)) throw new Error('not an array')
-    rows = decoded as ImportRow[]
+    decoded = JSON.parse(payload)
   } catch {
-    redirect('/admin/invites/import?error=Could+not+read+the+validated+rows')
+    failImport('Could not read the validated rows')
   }
 
-  const result = await commitInviteImport(prisma, actor.id, rows)
+  const parsed = importRowsSchema.safeParse(decoded)
+  if (!parsed.success) {
+    failImport(parsed.error.issues[0]?.message ?? 'The validated rows failed re-validation')
+  }
+
+  const result = await commitInviteImport(prisma, actor.id, parsed.data)
   revalidatePath('/admin/invites')
   redirect(`/admin/invites?imported=${result.created}&skipped=${result.skippedExistingEmails.length}`)
 }

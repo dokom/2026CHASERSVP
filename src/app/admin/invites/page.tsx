@@ -12,19 +12,27 @@ import { createInviteAction } from './actions'
 
 const STATUSES = ['PENDING', 'ATTENDING', 'DECLINED', 'PARTIAL'] as const
 
+const DEFAULT_QUERY = { search: undefined, status: undefined, page: 1, pageSize: 50 } as const
+
 export default async function InvitesPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | undefined>>
+  // A repeated param (`?search=a&search=b`) arrives as a string[], not a
+  // string — the previous `Record<string, string | undefined>` type lied
+  // about that possibility.
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   await requireRole('ADMIN')
   const params = await searchParams
-  const query = inviteQuerySchema.parse({
+  // `.parse()` throws on a duplicated param, 500-ing the page. `.safeParse()`
+  // treats any malformed query as "no filters" instead of a hard failure.
+  const parsedQuery = inviteQuerySchema.safeParse({
     search: params.search || undefined,
     status: params.status || undefined,
     page: params.page ?? 1,
     pageSize: 50,
   })
+  const query = parsedQuery.success ? parsedQuery.data : DEFAULT_QUERY
   const { rows, total } = await listInvites(prisma, query)
 
   const buildHref = (page: number) => {
