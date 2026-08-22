@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Three distinct MongoDB databases on one replica set node. tests/helpers/db.ts
+    # and tests/e2e/global-setup.ts both refuse to run unless all three resolve to
+    # different physical databases (see src/lib/db-identity.ts) - differing only by
+    # name here is sufficient. DATABASE_URL and DATABASE_URL_TEST are pushed below;
+    # DATABASE_URL_E2E is pushed by the Playwright global setup itself.
+    env:
+      DATABASE_URL: mongodb://127.0.0.1:27017/gala?replicaSet=rs0
+      DATABASE_URL_TEST: mongodb://127.0.0.1:27017/gala_test?replicaSet=rs0
+      DATABASE_URL_E2E: mongodb://127.0.0.1:27017/gala_e2e?replicaSet=rs0
+      APP_URL: http://localhost:3000
+      SESSION_SECRET: ci-session-secret-at-least-32-characters-long
+      ADMIN_SEED_EMAIL: owner@example.com
+      ADMIN_SEED_PASSWORD: ci-seed-password-1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # A plain `mongo:8` container (or GitHub Actions "services:", which has no
+      # way to override the container command) starts a standalone mongod.
+      # Prisma uses transactions, and MongoDB only supports transactions on a
+      # replica set, so every transactional test would fail. Run the container
+      # directly instead, with --replSet on the command line, so it can be
+      # initiated below.
+      - name: Start MongoDB (replica set)
+        run: docker run -d --name mongo -p 27017:27017 mongo:8 mongod --replSet rs0 --bind_ip_all
+
+      - name: Initiate replica set and wait for PRIMARY
+        run: |
+          echo "Waiting for mongod to accept connections..."
+          npx -y mongosh@2 --quiet --port 27017 --eval \
+            'for (let i = 0; i < 30; i++) { try { db.adminCommand({ ping: 1 }); quit(0) } catch (e) { sleep(1000) } } quit(1)'
+
+          echo "Initiating rs0..."
+          npx -y mongosh@2 --quiet --port 27017 --eval \
+            'rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "127.0.0.1:27017" }] })'
+
+          echo "Waiting for the replica set to elect a PRIMARY..."
+          npx -y mongosh@2 --quiet --port 27017 --eval \
+            'for (let i = 0; i < 30; i++) { if (rs.status().myState === 1) { quit(0) } sleep(1000) } quit(1)'
+
+      - name: Push Prisma schema (app + integration-test databases)
+        run: |
+          npx prisma db push
+          DATABASE_URL="$DATABASE_URL_TEST" npx prisma db push
+
+      # Vitest transpiles TypeScript without type-checking it, so type errors can
+      # accumulate invisibly while the test suite stays green. This step is the
+      # only thing in this pipeline that actually gates on `tsc`.
+      - name: Type check
+        run: npm run typecheck
+
+      # Enforces the 80% lines/functions/branches/statements thresholds already
+      # configured in vitest.config.ts.
+      - name: Unit + integration tests (with coverage gate)
+        run: npm run test:coverage
+
+      # `next build` rewrites tsconfig.json in place (adds .next/types plumbing).
+      # That's expected and harmless here - nothing after this step asserts a
+      # clean working tree.
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
