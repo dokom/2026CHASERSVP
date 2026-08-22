@@ -1,18 +1,12 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { STAFF_CREDENTIALS, ADMIN_CREDENTIALS } from './global-setup'
+import { signIn } from './sign-in'
 
 // Proves the role gate in src/lib/auth/guard.ts (hasRole via requireRole)
 // actually blocks lower-privileged accounts from higher-privileged routes.
 // Every assertion here must fail if requireRole stops comparing roles —
 // see the task report for the deliberately-broken-guard.ts run that
 // confirms it.
-
-async function signIn(page: Page, email: string, password: string) {
-  await page.goto('/admin/login')
-  await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Password').fill(password)
-  await page.getByRole('button', { name: 'Sign in' }).click()
-}
 
 test.describe('authorization boundaries', () => {
   test.describe('STAFF', () => {

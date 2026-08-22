@@ -3,9 +3,31 @@ import { execSync } from 'node:child_process'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../../src/lib/crypto/password'
 import { assertDistinctDatabases } from '../../src/lib/db-identity'
+import { createInvite } from '../../src/lib/invites/repository'
 import { E2E_DATABASE_URL } from '../../playwright.config'
 
 config({ path: '.env' })
+
+/**
+ * Bridges the plaintext guest invite token, generated fresh below on every
+ * run, from globalSetup's process to the worker processes that run the spec
+ * files. globalSetup and test files never share a JS heap — Playwright runs
+ * globalSetup in the main process and each test file in a forked worker —
+ * so a plain mutable module variable set inside globalSetup() would be
+ * invisible to guest-rsvp.spec.ts. `process.env` IS inherited by workers
+ * forked after globalSetup resolves, so it is used here as the carrier; the
+ * env var itself is a private hand-off, never logged, never part of a URL.
+ */
+const TOKEN_ENV_VAR = '__E2E_GUEST_INVITE_TOKEN'
+
+/**
+ * The plaintext token for the guest invite seeded below, importable by
+ * guest-rsvp.spec.ts (and any other spec that needs a known invite).
+ * Evaluated once, when this module is first loaded by a worker process —
+ * which Playwright guarantees happens only after globalSetup() below has
+ * already run to completion and populated `process.env`.
+ */
+export const E2E_GUEST_TOKEN = process.env[TOKEN_ENV_VAR] ?? ''
 
 // Every collection in the schema, ordered child-before-parent, mirroring
 // tests/helpers/db.ts (which resets the integration-test database the same
@@ -93,6 +115,56 @@ export default async function globalSetup(): Promise<void> {
         passwordHash: adminPasswordHash,
       },
     })
+
+    // Fixture event, agenda, meals and one invite for the guest-portal and
+    // event-config specs. Seeded fresh every run — see the database wipe
+    // above — so neither suite can drift the way the admin fixtures once did.
+    const startsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    const rsvpDeadline = new Date(startsAt.getTime() - 24 * 60 * 60 * 1000)
+
+    const event = await prisma.event.create({
+      data: {
+        name: 'The Grand Gala',
+        tagline: 'An evening under the stars',
+        startsAt,
+        timezone: 'America/New_York',
+        venueName: 'Grand Ballroom',
+        address: '123 Fifth Avenue, New York, NY',
+        dressCode: 'Black tie',
+        rsvpDeadline,
+      },
+    })
+
+    await prisma.agendaItem.createMany({
+      data: [
+        {
+          eventId: event.id,
+          title: 'Cocktail Reception',
+          startsAt: new Date(startsAt.getTime() - 60 * 60 * 1000),
+          sortOrder: 0,
+        },
+        { eventId: event.id, title: 'Dinner & Dancing', startsAt, sortOrder: 1 },
+      ],
+    })
+
+    await prisma.mealOption.createMany({
+      data: [
+        { eventId: event.id, label: 'Chicken', sortOrder: 0 },
+        { eventId: event.id, label: 'Vegetarian', sortOrder: 1 },
+      ],
+    })
+
+    // Invite tokens are stored hashed — a spec can never read one back out
+    // of the database. createInvite() (rather than a hand-rolled row) is
+    // what actually generates, hashes and seals the token, so this fixture
+    // exercises the exact same path production does.
+    const { token } = await createInvite(prisma, null, {
+      label: 'E2E Guest Party',
+      seatsAllotted: 2,
+      tableNumber: '12',
+      primaryGuest: { firstName: 'Riley', lastName: 'Chen' },
+    })
+    process.env[TOKEN_ENV_VAR] = token
   } finally {
     await prisma.$disconnect()
   }

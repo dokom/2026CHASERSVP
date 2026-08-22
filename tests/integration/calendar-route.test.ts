@@ -21,7 +21,7 @@ async function seedEvent(withAgenda: boolean) {
             agendaItems: {
               create: [
                 { title: 'Cocktails', startsAt: new Date('2026-11-14T18:00:00Z'), sortOrder: 0 },
-                { title: 'After-party', startsAt: new Date('2026-11-14T22:00:00Z'), sortOrder: 1 },
+                { title: 'After-party', startsAt: new Date('2026-11-14T20:00:00Z'), sortOrder: 1 },
               ],
             },
           }
@@ -36,13 +36,18 @@ describe('buildInviteIcs', () => {
     const event = await getEvent(testDb)
     const ics = buildInviteIcs(event!, 'invite123', STAMP)
     expect(ics).toContain('DTSTART:20261114T180000Z')
-    expect(ics).toContain('DTEND:20261114T230000Z')
+    // Last agenda item (After-party) starts 20:00Z, so end = +1h = 21:00Z.
+    // This must differ from the no-agenda fallback (start 18:00Z + 5h = 23:00Z)
+    // or this assertion cannot distinguish the two branches.
+    expect(ics).toContain('DTEND:20261114T210000Z')
   })
 
   it('falls back to five hours when there is no agenda', async () => {
     await seedEvent(false)
     const event = await getEvent(testDb)
     const ics = buildInviteIcs(event!, 'invite123', STAMP)
+    // Start 18:00Z + 5h = 23:00Z. Must differ from the agenda-branch value
+    // above (21:00Z) or this assertion cannot distinguish the two branches.
     expect(ics).toContain('DTEND:20261114T230000Z')
   })
 

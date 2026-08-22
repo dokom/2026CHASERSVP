@@ -1,4 +1,17 @@
+/** Double-submit cookie for the authenticated `/admin` surface. Unchanged name and path. */
 export const CSRF_COOKIE = 'gala_csrf'
+
+/**
+ * Double-submit cookie for the unauthenticated `/i` guest RSVP surface.
+ *
+ * Deliberately a *different* cookie, not a shared one: the guest page renders
+ * its CSRF token into the page's HTML (it has to — there is no Server Action
+ * boundary to hide it behind on an unauthenticated GET), and anything an
+ * unauthenticated visitor's browser receives must never be the same secret
+ * that double-submit-protects `/admin` mutations. See `src/middleware.ts` for
+ * the non-overlapping cookie `path` that keeps the two off each other's routes.
+ */
+export const GUEST_CSRF_COOKIE = 'gala_guest_csrf'
 
 /**
  * 32 bytes encodes to 43 base64url characters.

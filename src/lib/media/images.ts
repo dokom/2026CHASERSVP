@@ -8,6 +8,9 @@ export class InvalidImageError extends Error {
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 export const MAX_DIMENSION = 8000
+// Catches the case the per-side cap misses: both sides individually under
+// MAX_DIMENSION but their product still absurd (e.g. 8000 x 8000 = 64M px).
+export const MAX_TOTAL_PIXELS = 40_000_000
 
 export type ImageInfo = {
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp'
@@ -45,11 +48,22 @@ function readJpeg(bytes: Buffer): ImageInfo | null {
   return null
 }
 
+/**
+ * Parses only the "simple" lossy VP8 container. WEBP also has VP8L
+ * (lossless) and VP8X (extended: animation/alpha/ICC) sub-formats, which
+ * encode their dimensions at different offsets and bit widths. The 3-char
+ * check this replaced ('VP8') matched all three, so VP8L/VP8X bytes were
+ * being read through the lossy layout and produced dimensions that were
+ * simply wrong, not merely unsupported. Comparing the full 4-byte fourCC
+ * ('VP8 ', with a trailing space, vs 'VP8L' / 'VP8X') accepts only the
+ * container this function actually knows how to parse and rejects the rest,
+ * rather than returning garbage for them.
+ */
 function readWebp(bytes: Buffer): ImageInfo | null {
   if (bytes.length < 30) return null
   if (bytes.toString('ascii', 0, 4) !== 'RIFF') return null
   if (bytes.toString('ascii', 8, 12) !== 'WEBP') return null
-  if (bytes.toString('ascii', 12, 15) !== 'VP8') return null
+  if (bytes.toString('ascii', 12, 16) !== 'VP8 ') return null
   // Lossy VP8: 14-bit dimensions follow the 3-byte start code.
   return {
     mimeType: 'image/webp',
@@ -64,6 +78,19 @@ function readWebp(bytes: Buffer): ImageInfo | null {
  * The filename and the declared Content-Type are both attacker-controlled and
  * are never consulted. SVG is excluded deliberately: it is script-capable, and
  * serving one from our own origin would be a stored-XSS vector.
+ *
+ * IMPORTANT — width/height are self-declared header fields, never verified
+ * against the payload. Doing that verification would mean decoding the
+ * image, which would pull in an image codec as a dependency: a large native
+ * supply-chain surface, decoding untrusted bytes, on a project holding PII.
+ * That trade was deliberately rejected. So a file can pass this function
+ * with a modest declared size and still carry arbitrary bytes after its
+ * header, up to MAX_IMAGE_BYTES — the per-side and total-pixel checks below
+ * bound only the claimed numbers, not the actual content. That is fine:
+ * this module never executes or interprets the payload, it only stores and
+ * later returns the same bytes, and the serving route sends them back with
+ * the STORED Content-Type plus X-Content-Type-Options: nosniff, so a
+ * browser never sniffs or executes them regardless of what they contain.
  */
 export function inspectImage(bytes: Buffer): ImageInfo {
   if (bytes.length === 0) throw new InvalidImageError('the file is empty')
@@ -79,6 +106,9 @@ export function inspectImage(bytes: Buffer): ImageInfo {
   }
   if (info.width > MAX_DIMENSION || info.height > MAX_DIMENSION) {
     throw new InvalidImageError(`larger than ${MAX_DIMENSION}px on a side`)
+  }
+  if (info.width * info.height > MAX_TOTAL_PIXELS) {
+    throw new InvalidImageError(`more than ${MAX_TOTAL_PIXELS.toLocaleString()} total pixels`)
   }
   return info
 }

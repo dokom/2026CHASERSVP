@@ -63,6 +63,40 @@ export async function readImage(
   return { bytes: Buffer.from(asset.bytes), mimeType: asset.mimeType, filename: asset.filename }
 }
 
+/**
+ * Mirrors the "one event per deployment" lookup in events/repository.ts
+ * (oldest-first `findFirst`, so a stray second row can never shadow the
+ * real one) without pulling in that module's full agenda/meal/marker
+ * select — this call site only ever needs the one field.
+ */
+async function getCurrentFloorplanAssetId(db: PrismaClient): Promise<string | null> {
+  const event = await db.event.findFirst({
+    select: { floorplanAssetId: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  return event?.floorplanAssetId ?? null
+}
+
+/**
+ * The only image this deployment serves to an unauthenticated caller: the
+ * current event's floorplan. Every other MediaAsset id — including past
+ * floorplans an event update has since replaced — 404s, even though the
+ * table holds only operator uploads today. That "only operator uploads"
+ * fact is not a promise this function should lean on; scoping to the
+ * live floorplanAssetId keeps the endpoint safe regardless of what else
+ * ever lands in the table. Staying unauthenticated is deliberate: a guest
+ * opening their invite link has no session and still needs to see the
+ * floorplan.
+ */
+export async function readFloorplanImage(
+  db: PrismaClient,
+  id: string,
+): Promise<{ bytes: Buffer; mimeType: string; filename: string } | null> {
+  const currentFloorplanId = await getCurrentFloorplanAssetId(db)
+  if (!currentFloorplanId || currentFloorplanId !== id) return null
+  return readImage(db, id)
+}
+
 export async function deleteImage(
   db: PrismaClient,
   actorId: string | null,

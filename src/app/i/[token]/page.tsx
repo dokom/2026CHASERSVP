@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
-import { CSRF_COOKIE } from '@/lib/auth/csrf'
+import { GUEST_CSRF_COOKIE } from '@/lib/auth/csrf'
 import { loadGuestPage } from '@/lib/guest/page-data'
 import { AgendaTimeline } from '@/components/guest/agenda-timeline'
 import { SeatMap } from '@/components/guest/seat-map'
@@ -25,10 +25,13 @@ export default async function GuestPage({
   const data = await loadGuestPage(prisma, token, new Date())
   if (!data) notFound()
 
-  // Read only. Middleware (Task 6) guarantees the cookie for /i/*; setting it
-  // here would be a cookie write during render, which Next.js forbids.
+  // Read only. Middleware guarantees the guest CSRF cookie for /i/*; setting
+  // it here would be a cookie write during render, which Next.js forbids.
+  // This is deliberately its own cookie, distinct from the admin one: this
+  // page is unauthenticated and renders the token into its HTML, so it must
+  // never leak the admin double-submit secret to an anonymous invite holder.
   const store = await cookies()
-  const csrf = store.get(CSRF_COOKIE)?.value
+  const csrf = store.get(GUEST_CSRF_COOKIE)?.value
   if (!csrf) throw new Error('CSRF cookie missing - check that src/middleware.ts matches /i/*')
 
   const { invite, event, window, table, marker } = data

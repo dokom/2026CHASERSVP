@@ -7,7 +7,16 @@ import type { GuestEntry, RsvpSubmission } from '@/lib/validation/guest'
 
 export type RsvpResult =
   | { ok: true; inviteId: string; status: InviteStatus }
-  | { ok: false; reason: 'NOT_FOUND' | 'CLOSED' | 'SEAT_LIMIT' | 'FOREIGN_GUEST' }
+  | {
+      ok: false
+      reason:
+        | 'NOT_FOUND'
+        | 'CLOSED'
+        | 'SEAT_LIMIT'
+        | 'FOREIGN_GUEST'
+        | 'DUPLICATE_GUEST'
+        | 'INVALID_MEAL_OPTION'
+    }
 
 /** Thrown internally to short-circuit the transaction when the seat limit is exceeded. */
 export class SeatAllowanceError extends Error {
@@ -42,6 +51,50 @@ function toGuestData(entry: GuestEntry): Omit<Prisma.GuestUncheckedCreateInput, 
 }
 
 /**
+ * Updates one existing guest, explicitly carrying isPrimary, tableNumber and
+ * checkedInAt through unchanged. `toGuestData` never sets these fields, so
+ * relying on Prisma's "omitted key means untouched" behavior alone is one
+ * accidental future refactor away from wiping them; reading the row back and
+ * re-asserting the same values makes the preservation an explicit invariant
+ * instead of an implicit one.
+ */
+async function updateExistingGuest(
+  tx: Prisma.TransactionClient,
+  entry: GuestEntry & { id: string },
+): Promise<void> {
+  const existing = await tx.guest.findUniqueOrThrow({
+    where: { id: entry.id },
+    select: { isPrimary: true, tableNumber: true, checkedInAt: true },
+  })
+  await tx.guest.update({
+    where: { id: entry.id },
+    data: { ...toGuestData(entry), ...existing },
+  })
+}
+
+/**
+ * If nobody in the party survived this submission as isPrimary — e.g. a
+ * resubmission stripped every hidden id, so every entry became a fresh
+ * create() defaulting isPrimary to false — the page that greets the guest
+ * has nobody correct to fall back to. Rather than have a create() guess at
+ * isPrimary while other entries in the same submission are still being
+ * processed (risking two guests both landing on true), the invariant is
+ * restored once, after the batch, by promoting the earliest-created
+ * survivor. Deterministic, and correct regardless of submission order.
+ */
+async function ensurePartyHasPrimary(tx: Prisma.TransactionClient, inviteId: string): Promise<void> {
+  const remaining = await tx.guest.findMany({
+    where: { inviteId },
+    select: { id: true, isPrimary: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  const [earliest] = remaining
+  if (earliest && !remaining.some((g) => g.isPrimary)) {
+    await tx.guest.update({ where: { id: earliest.id }, data: { isPrimary: true } })
+  }
+}
+
+/**
  * Upserts every submitted guest for an attending party and deletes any
  * previously-known guest the party did not resubmit (a seat given back).
  * `submittedIds` — ids already verified to belong to this invite — seeds the
@@ -56,18 +109,22 @@ async function applyAttendingGuests(
   const keptIds = new Set(submittedIds)
 
   for (const entry of guests) {
-    const data = toGuestData(entry)
     if (entry.id) {
-      await tx.guest.update({ where: { id: entry.id }, data })
+      await updateExistingGuest(tx, entry as GuestEntry & { id: string })
     } else {
-      const created = await tx.guest.create({ data: { ...data, inviteId } })
+      const created = await tx.guest.create({ data: { ...toGuestData(entry), inviteId } })
       keptIds.add(created.id)
     }
   }
 
+  // Someone already walked through the door for a checked-in guest — that
+  // record is not the party's to discard just by omitting it from a
+  // resubmission (accidentally, via a stripped hidden id, or otherwise).
   await tx.guest.deleteMany({
-    where: { inviteId, id: { notIn: [...keptIds] } },
+    where: { inviteId, id: { notIn: [...keptIds] }, checkedInAt: null },
   })
+
+  await ensurePartyHasPrimary(tx, inviteId)
 }
 
 /**
@@ -97,12 +154,37 @@ export async function submitRsvp(
     return { ok: false, reason: 'SEAT_LIMIT' }
   }
 
+  const submittedIds = submission.guests.map((g) => g.id).filter((id): id is string => !!id)
+
+  // Two entries claiming the same id collapse to one kept id: without this
+  // check, [id1, id1] on a 2-seat party silently deletes the second guest.
+  if (new Set(submittedIds).size !== submittedIds.length) {
+    return { ok: false, reason: 'DUPLICATE_GUEST' }
+  }
+
   // Every submitted id must already belong to THIS invite. Without this a guest
   // could rewrite another party's details by pasting their guest id.
   const ownIds = new Set(invite.guests.map((g) => g.id))
-  const submittedIds = submission.guests.map((g) => g.id).filter((id): id is string => !!id)
   if (submittedIds.some((id) => !ownIds.has(id))) {
     return { ok: false, reason: 'FOREIGN_GUEST' }
+  }
+
+  // A submitted mealOptionId is just an ObjectId-shaped string at this point —
+  // Mongo has no foreign key to stop a retired option or an unrelated
+  // document's id from being written through. Intersect against the active
+  // options actually referenced instead of trusting the shape check alone.
+  const submittedMealIds = submission.guests
+    .map((g) => g.mealOptionId)
+    .filter((id): id is string => !!id)
+  if (submittedMealIds.length > 0) {
+    const activeMeals = await db.mealOption.findMany({
+      where: { id: { in: submittedMealIds }, isActive: true },
+      select: { id: true },
+    })
+    const activeMealIds = new Set(activeMeals.map((m) => m.id))
+    if (submittedMealIds.some((id) => !activeMealIds.has(id))) {
+      return { ok: false, reason: 'INVALID_MEAL_OPTION' }
+    }
   }
 
   const status = await db.$transaction(async (tx) => {

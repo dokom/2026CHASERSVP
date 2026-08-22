@@ -1,12 +1,15 @@
 import { prisma } from '@/lib/db'
-import { readImage } from '@/lib/media/repository'
+import { readFloorplanImage } from '@/lib/media/repository'
 
+// Unauthenticated by design (a guest holding an invite link has no session
+// and must still see the floorplan) but scoped to only the current event's
+// floorplan asset — see readFloorplanImage for why every other id 404s.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await params
-  const asset = await readImage(prisma, id)
+  const asset = await readFloorplanImage(prisma, id)
   if (!asset) return new Response('Not found', { status: 404 })
 
   return new Response(new Uint8Array(asset.bytes), {

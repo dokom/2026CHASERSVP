@@ -1,5 +1,7 @@
+import { cookies } from 'next/headers'
 import { prisma } from '@/lib/db'
 import { requireRole } from '@/lib/auth/guard'
+import { CSRF_COOKIE } from '@/lib/auth/csrf'
 import { getEvent } from '@/lib/events/repository'
 import { CsrfInput } from '@/components/admin/csrf-input'
 import { Field } from '@/components/admin/field'
@@ -8,6 +10,7 @@ import {
   saveEventAction, saveAgendaItemAction, deleteAgendaItemAction,
   saveMealOptionAction, toggleMealOptionAction,
 } from './actions'
+import { FloorplanEditor } from './floorplan-editor'
 
 /** `datetime-local` wants `YYYY-MM-DDTHH:mm` with no zone or seconds. */
 function toLocalInput(value: Date | undefined): string {
@@ -22,6 +25,16 @@ export default async function EventPage({
   await requireRole('ADMIN')
   const { error } = await searchParams
   const event = await getEvent(prisma)
+
+  // src/middleware.ts guarantees the CSRF cookie exists for every /admin
+  // request before this Server Component renders, so this is a plain read.
+  // Next.js forbids cookies().set() during render — writing here would 500
+  // the page in production while every unit/integration test stays green.
+  const store = await cookies()
+  const csrf = store.get(CSRF_COOKIE)?.value
+  if (!csrf) {
+    throw new Error('CSRF cookie missing — check that src/middleware.ts matches this route')
+  }
 
   return (
     <section className="space-y-10">
@@ -123,6 +136,12 @@ export default async function EventPage({
               </button>
             </form>
           </div>
+
+          <FloorplanEditor
+            floorplanAssetId={event.floorplanAssetId}
+            markers={event.tableMarkers}
+            csrf={csrf}
+          />
         </>
       ) : null}
     </section>

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { testDb, resetDb } from '../helpers/db'
 import { submitRsvp } from '@/lib/guest/rsvp'
 import { createInvite } from '@/lib/invites/repository'
+import { hashToken } from '@/lib/crypto/tokens'
 
 const OPEN = new Date('2026-09-01T00:00:00Z')
 const DEADLINE = new Date('2026-10-24T23:59:00Z')
@@ -16,6 +17,26 @@ async function seedInvite(seats = 2) {
     seatsAllotted: seats,
     primaryGuest: { firstName: 'Jordan', lastName: 'Reyes', email: 'jordan@example.com' },
   })
+}
+
+/** Seeds the singleton Event plus one active and one retired meal option. */
+async function seedMealOptions() {
+  const event = await testDb.event.create({
+    data: {
+      name: 'Test Gala',
+      startsAt: new Date('2026-10-01T00:00:00Z'),
+      venueName: 'Grand Hall',
+      address: '1 Main St',
+      rsvpDeadline: DEADLINE,
+    },
+  })
+  const active = await testDb.mealOption.create({
+    data: { eventId: event.id, label: 'Chicken', isActive: true },
+  })
+  const retired = await testDb.mealOption.create({
+    data: { eventId: event.id, label: 'Discontinued Fish', isActive: false },
+  })
+  return { active, retired }
 }
 
 const entry = (over: Record<string, unknown> = {}) => ({
@@ -144,25 +165,145 @@ describe('submitRsvp', () => {
     expect(fresh.seatsAllotted).toBe(1)
   })
 
-  it('is idempotent — resubmitting replaces rather than duplicates', async () => {
+  // --- C2: resubmission must not destroy seat/check-in state -------------
+
+  it('REFUSES to delete a checked-in guest, and reassigns isPrimary, when a ' +
+    'resubmission strips hidden id inputs', async () => {
     const { invite, token } = await seedInvite(2)
+    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
+
+    // First submission, with real ids, seats the party normally.
+    await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry({ id: primary.id }), entry({ firstName: 'Sam', lastName: 'Reyes' })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+
+    const [g1, g2] = await testDb.guest.findMany({
+      where: { inviteId: invite.id }, orderBy: { createdAt: 'asc' },
+    })
+    // g1 is the seeded primary. Seat and check in g2 the way door staff would.
+    const checkinTime = new Date('2026-09-15T18:00:00Z')
+    await testDb.guest.update({
+      where: { id: g2!.id }, data: { tableNumber: '7', checkedInAt: checkinTime },
+    })
+
+    // Resubmission with every hidden id input stripped — indistinguishable,
+    // from this function's point of view, from a form that never sent them.
+    const result = await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry({ firstName: g1!.firstName }), entry({ firstName: 'Sam', lastName: 'Reyes' })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+
+    expect(result).toMatchObject({ ok: true })
+
+    const stillCheckedIn = await testDb.guest.findUnique({ where: { id: g2!.id } })
+    expect(stillCheckedIn).not.toBeNull()
+    expect(stillCheckedIn?.checkedInAt?.toISOString()).toBe(checkinTime.toISOString())
+    expect(stillCheckedIn?.tableNumber).toBe('7')
+
+    // g1 (not checked in) was legitimately replaced by the resubmission, but
+    // the party must still have exactly one primary guest afterward.
+    const finalGuests = await testDb.guest.findMany({ where: { inviteId: invite.id } })
+    expect(finalGuests.filter((g) => g.isPrimary)).toHaveLength(1)
+  })
+
+  it('preserves isPrimary and tableNumber across a resubmission that reuses the same id', async () => {
+    const { invite, token } = await seedInvite(1)
+    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
+    await testDb.guest.update({ where: { id: primary.id }, data: { tableNumber: '3' } })
+
     const payload = {
       attending: true,
-      guests: [entry(), entry({ firstName: 'Sam' })],
+      guests: [entry({ id: primary.id, company: 'Northwind' })],
       extraSeatsRequested: 0,
     }
     await submitRsvp(testDb, token, payload, OPEN, DEADLINE)
     await submitRsvp(testDb, token, payload, OPEN, DEADLINE)
-    expect(await testDb.guest.count({ where: { inviteId: invite.id } })).toBe(2)
+
+    const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })
+    expect(fresh.isPrimary).toBe(true)
+    expect(fresh.tableNumber).toBe('3')
+    expect(fresh.company).toBe('Northwind')
+    expect(await testDb.guest.count({ where: { inviteId: invite.id } })).toBe(1)
   })
 
-  it('audits the submission without recording the token', async () => {
-    const { token } = await seedInvite()
-    await submitRsvp(testDb, token,
-      { attending: false, guests: [], extraSeatsRequested: 0 }, OPEN, DEADLINE)
-    const log = await testDb.auditLog.findFirst({ where: { action: 'rsvp.submit' } })
-    expect(log).not.toBeNull()
-    expect(log?.actorId).toBeNull()
+  // --- I1: mealOptionId must reference an active option -------------------
+
+  it('REJECTS a mealOptionId that has been retired', async () => {
+    const { retired } = await seedMealOptions()
+    const { token } = await seedInvite(1)
+    const result = await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry({ mealOptionId: retired.id })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+    expect(result).toEqual({ ok: false, reason: 'INVALID_MEAL_OPTION' })
+  })
+
+  it('REJECTS a mealOptionId belonging to no meal option at all', async () => {
+    await seedMealOptions()
+    const { token } = await seedInvite(1)
+    const result = await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry({ mealOptionId: '507f1f77bcf86cd799439011' })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+    expect(result).toEqual({ ok: false, reason: 'INVALID_MEAL_OPTION' })
+  })
+
+  it('ACCEPTS an active mealOptionId', async () => {
+    const { active } = await seedMealOptions()
+    const { token } = await seedInvite(1)
+    const result = await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry({ mealOptionId: active.id })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+    expect(result).toMatchObject({ ok: true })
+  })
+
+  // --- I2: duplicate own-ids must not delete a party member ---------------
+
+  it('REJECTS duplicate guest ids instead of silently deleting the other party member', async () => {
+    const { invite, token } = await seedInvite(2)
+    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
+    await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry({ id: primary.id }), entry({ firstName: 'Sam', lastName: 'Reyes' })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+    const [g1, g2] = await testDb.guest.findMany({
+      where: { inviteId: invite.id }, orderBy: { createdAt: 'asc' },
+    })
+
+    const result = await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry({ id: g1!.id }), entry({ id: g1!.id, firstName: 'Duplicate' })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+
+    expect(result).toEqual({ ok: false, reason: 'DUPLICATE_GUEST' })
+    expect(await testDb.guest.findUnique({ where: { id: g2!.id } })).not.toBeNull()
+  })
+
+  it('audits the submission with real information and without ever recording the token', async () => {
+    const { invite, token } = await seedInvite(2)
+    await submitRsvp(testDb, token, {
+      attending: true,
+      guests: [entry(), entry({ firstName: 'Sam', lastName: 'Reyes' })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+
+    const log = await testDb.auditLog.findFirstOrThrow({ where: { action: 'rsvp.submit' } })
+    expect(log.actorId).toBeNull()
+    expect(log.entityId).toBe(invite.id)
+    // Positive assertions on real content: a no-op audit writer (or one that
+    // merely console.logs the token elsewhere) cannot satisfy these, unlike a
+    // bare "the row doesn't contain the token" check.
+    expect(log.meta).toMatchObject({ attending: true, partySize: 2, extraSeatsRequested: 0 })
     expect(JSON.stringify(log)).not.toContain(token)
+    expect(JSON.stringify(log)).not.toContain(hashToken(token))
   })
 })

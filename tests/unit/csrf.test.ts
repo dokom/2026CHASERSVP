@@ -1,9 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { issueCsrfToken, verifyCsrfToken, CSRF_COOKIE } from '@/lib/auth/csrf'
+import { issueCsrfToken, verifyCsrfToken, CSRF_COOKIE, GUEST_CSRF_COOKIE } from '@/lib/auth/csrf'
 
 describe('csrf', () => {
-  it('names the cookie', () => {
+  it('names the admin cookie', () => {
     expect(CSRF_COOKIE).toBe('gala_csrf')
+  })
+
+  it('names the guest cookie', () => {
+    expect(GUEST_CSRF_COOKIE).toBe('gala_guest_csrf')
+  })
+
+  it('uses a different cookie name for the guest surface than the admin surface', () => {
+    // The guest page renders its token into unauthenticated HTML; sharing a
+    // name with the admin cookie would mean sharing the secret itself.
+    expect(GUEST_CSRF_COOKIE).not.toBe(CSRF_COOKIE)
   })
 
   it('issues a 43-character base64url token', () => {
