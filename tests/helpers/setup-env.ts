@@ -1,6 +1,10 @@
-// Placeholder Vitest setup file, referenced by vitest.config.ts `test.setupFiles`.
-// Task 1 only needs this module to exist so the test harness can boot; it must
-// stay a no-op here since `src/lib/env.ts` (a later task) is the sole reader of
-// `process.env`. A later task (env/config validation) will populate this with
-// real test-environment setup (e.g. loading `.env.test` via dotenv).
-export {}
+// Loads `.env` so integration tests see the same configuration the app does,
+// without any test hardcoding secrets. `tests/helpers/*` is test
+// infrastructure and is permitted to read `process.env` directly — the
+// restriction to `src/lib/env.ts` as the sole reader applies to app code.
+import { config } from 'dotenv'
+
+config({ path: '.env' })
+
+process.env.SESSION_SECRET ??= 'test-session-secret-at-least-32-chars'
+process.env.APP_URL ??= 'http://localhost:3000'
