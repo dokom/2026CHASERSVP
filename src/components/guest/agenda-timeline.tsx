@@ -28,7 +28,7 @@ export function AgendaTimeline({
           />
           <time
             dateTime={item.startsAt.toISOString()}
-            className="block text-sm tracking-wide text-[var(--color-brass)]"
+            className="block text-sm tracking-wide text-[var(--mist)]"
           >
             {formatTime(item.startsAt, timezone)}
           </time>

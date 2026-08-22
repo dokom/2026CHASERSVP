@@ -66,7 +66,7 @@ export default async function GuestPage({
         </Arrival>
 
         <section aria-labelledby="event" className="relative z-10 space-y-2">
-          <h2 id="event" className="font-serif text-3xl text-[var(--color-brass)]">{event.name}</h2>
+          <h2 id="event" className="font-serif text-3xl text-[var(--color-text)]">{event.name}</h2>
           <p>
             <time dateTime={event.startsAt.toISOString()}>
               {new Intl.DateTimeFormat('en-US', {

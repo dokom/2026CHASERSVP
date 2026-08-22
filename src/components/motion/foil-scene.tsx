@@ -2,18 +2,23 @@
 
 import { useEffect, useRef } from 'react'
 import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, Color, PerspectiveCamera,
+  AdditiveBlending, BufferAttribute, BufferGeometry, Color, NormalBlending, PerspectiveCamera,
   Points, Scene, ShaderMaterial, WebGLRenderer,
 } from 'three'
 import { journey } from '@/lib/motion/journey'
 
 const COUNT = 800
 const BRASS = new Color('#C9A24D')
+const BRASS_DIM = new Color('#8C6F2F')
+/** Roughly a third of the dark-scheme fleck alpha, so light-scheme foil reads
+ * as darker flecks on a bone card rather than a light smear. */
+const LIGHT_ALPHA_SCALE = 1 / 3
 
 const VERTEX = /* glsl */ `
   attribute float aSeed;
   uniform float uTime;
   uniform float uDisperse;
+  uniform float uAlphaScale;
   varying float vAlpha;
   void main() {
     vec3 p = position;
@@ -25,7 +30,7 @@ const VERTEX = /* glsl */ `
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = (1.2 + aSeed * 2.2) * (240.0 / -mv.z);
-    vAlpha = (0.35 + aSeed * 0.5) * (1.0 - uDisperse * 0.6);
+    vAlpha = (0.35 + aSeed * 0.5) * (1.0 - uDisperse * 0.6) * uAlphaScale;
   }
 `
 
@@ -86,10 +91,38 @@ export function FoilScene() {
         uTime: { value: 0 },
         uDisperse: { value: 0 },
         uColor: { value: BRASS },
+        uAlphaScale: { value: 1 },
       },
     })
     const points = new Points(buildGeometry(), material)
     scene.add(points)
+
+    /**
+     * AdditiveBlending is what makes the flecks read as glowing foil against
+     * the dark ground — on a light (bone) ground the same blend mode sums
+     * light-on-light and washes out into a yellow smear. Switch to normal
+     * blending, the dimmer brass token, and a third of the alpha so flecks
+     * read as darker foil on a light card instead.
+     *
+     * `matchMedia` here is a deliberate, narrow exception to "motion mode is
+     * decided once by MotionProvider, no component reads matchMedia on its
+     * own" (globals constraint): this is a colour-scheme query, not a
+     * device-tier or motion-mode decision, and it is scoped entirely to this
+     * component's own shader uniforms. It's safe only because FoilScene is
+     * already dynamically imported with `ssr: false` and gated to `full`
+     * motion mode — it never runs on the server and never runs when motion
+     * is reduced or lite.
+     */
+    const scheme = window.matchMedia('(prefers-color-scheme: light)')
+    const applyScheme = (isLight: boolean) => {
+      material.blending = isLight ? NormalBlending : AdditiveBlending
+      material.uniforms.uColor!.value = isLight ? BRASS_DIM : BRASS
+      material.uniforms.uAlphaScale!.value = isLight ? LIGHT_ALPHA_SCALE : 1
+      material.needsUpdate = true
+    }
+    applyScheme(scheme.matches)
+    const onSchemeChange = (event: MediaQueryListEvent) => applyScheme(event.matches)
+    scheme.addEventListener('change', onSchemeChange)
 
     const resize = () => {
       const { clientWidth, clientHeight } = canvas
@@ -129,6 +162,7 @@ export function FoilScene() {
     return () => {
       cancelAnimationFrame(frame)
       document.removeEventListener('visibilitychange', onVisibility)
+      scheme.removeEventListener('change', onSchemeChange)
       io.disconnect()
       ro.disconnect()
       points.geometry.dispose()
