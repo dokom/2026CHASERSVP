@@ -39,4 +39,36 @@ describe('csrf', () => {
   it('rejects an empty pair', () => {
     expect(verifyCsrfToken('', '')).toBe(false)
   })
+
+  it('accepts two identical 43-character tokens', () => {
+    const token = issueCsrfToken()
+    expect(token).toHaveLength(43)
+    expect(verifyCsrfToken(token, `${token}`)).toBe(true)
+  })
+
+  it('rejects tokens differing only in the final character', () => {
+    const token = issueCsrfToken()
+    const lastChar = token.at(-1)
+    const swap = lastChar === 'A' ? 'B' : 'A'
+    const tampered = `${token.slice(0, -1)}${swap}`
+    expect(verifyCsrfToken(token, tampered)).toBe(false)
+  })
+
+  it('rejects tokens differing only in the first character', () => {
+    const token = issueCsrfToken()
+    const firstChar = token.at(0)
+    const swap = firstChar === 'A' ? 'B' : 'A'
+    const tampered = `${swap}${token.slice(1)}`
+    expect(verifyCsrfToken(token, tampered)).toBe(false)
+  })
+
+  it('rejects a shorter value', () => {
+    const token = issueCsrfToken()
+    expect(verifyCsrfToken(token, token.slice(0, -1))).toBe(false)
+  })
+
+  it('rejects a longer value', () => {
+    const token = issueCsrfToken()
+    expect(verifyCsrfToken(token, `${token}X`)).toBe(false)
+  })
 })

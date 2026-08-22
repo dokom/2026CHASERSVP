@@ -37,20 +37,6 @@ const eslintConfig = [
       'no-console': ['error', { allow: ['warn', 'error'] }],
     },
   },
-  {
-    // src/lib/auth/csrf.ts uses a function-scoped `require('node:crypto')`
-    // deliberately: this module is also imported by src/middleware.ts, which
-    // is bundled for the Edge runtime, and a top-level `import` of
-    // `node:crypto` would be evaluated eagerly there and crash every
-    // `/admin` request, even though the Edge path never calls this function.
-    // Converting to dynamic `import()` would make verifyCsrfToken async and
-    // change its call sites' behavior, which is out of scope for a lint
-    // fix — see the report for this file's disposition.
-    files: ['src/lib/auth/csrf.ts'],
-    rules: {
-      '@typescript-eslint/no-require-imports': 'off',
-    },
-  },
 ]
 
 export default eslintConfig

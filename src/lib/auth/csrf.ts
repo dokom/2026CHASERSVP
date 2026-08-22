@@ -26,25 +26,44 @@ function toBase64Url(bytes: Uint8Array): string {
 }
 
 /**
+ * Constant-time equality over code units.
+ *
+ * Both inputs are base64url ASCII (see `issueCsrfToken`), so comparing
+ * `charCodeAt` values is exact — no `Buffer` or `TextEncoder` needed, which
+ * keeps this correct on both Node and the Edge runtime.
+ *
+ * Every code unit is compared, even after a difference is found: the XOR of
+ * mismatched units is accumulated with `|=` and only tested once, at the
+ * end, rather than returning as soon as a mismatch appears. An early return
+ * on the first differing byte is exactly the timing side-channel this
+ * function exists to close.
+ *
+ * A length mismatch *does* return early — that is safe here specifically
+ * because the length isn't secret: CSRF tokens are a fixed, public 43
+ * characters (see `issueCsrfToken`), so leaking "the lengths differ" tells
+ * an attacker nothing they didn't already know. Do not reuse this early
+ * return for comparisons where length itself is sensitive.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
+/**
  * Double-submit verification: the cookie value must equal the value posted in
  * the form body. Compared in constant time.
  *
- * Runs only inside Server Actions on the Node.js runtime, so it is free to
- * use `node:crypto`'s `timingSafeEqual` and `Buffer`. Both are imported
- * lazily, inside the function body, rather than as a top-level
- * `import … from 'node:crypto'`: this same module is also imported by
- * `src/middleware.ts` (for `issueCsrfToken`), which is bundled for the Edge
- * runtime. A top-level `node:crypto` import gets evaluated eagerly as soon
- * as the Edge bundle loads — even though the Edge code path never calls
- * this function — and `node:crypto` does not exist there, which crashes
- * every `/admin` request. Requiring it inside the function defers loading
- * until `verifyCsrfToken` actually runs, which only happens on Node.
+ * Runs only inside Server Actions on the Node.js runtime, but this module is
+ * also imported by `src/middleware.ts`, which is bundled for the Edge
+ * runtime. Using `constantTimeEqual` instead of `node:crypto`'s
+ * `timingSafeEqual` means there is nothing Node-specific here, so this
+ * function works unchanged on either runtime and needs no lazy `require`.
  */
 export function verifyCsrfToken(cookieValue: string | undefined, formValue: unknown): boolean {
   if (!cookieValue || typeof formValue !== 'string' || formValue.length === 0) return false
-  const { timingSafeEqual } = require('node:crypto') as typeof import('node:crypto')
-  const a = Buffer.from(cookieValue)
-  const b = Buffer.from(formValue)
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
+  return constantTimeEqual(cookieValue, formValue)
 }
