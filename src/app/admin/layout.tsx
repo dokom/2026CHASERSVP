@@ -1,4 +1,5 @@
 import { getCurrentUser } from '@/lib/auth/guard'
+import { CsrfInput } from '@/components/admin/csrf-input'
 import { logoutAction } from './login/actions'
 import { AdminNav } from './nav'
 
@@ -15,6 +16,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <span className="font-serif text-lg text-[var(--color-brass)]">Gala Admin</span>
           <AdminNav role={user.role} />
           <form action={logoutAction}>
+            <CsrfInput />
             <span className="mr-3 text-sm text-[var(--color-text-muted)]">{user.name}</span>
             <button type="submit" className="text-sm underline underline-offset-4">
               Sign out

@@ -17,6 +17,21 @@ const MODELS = [
   'adminSession', 'adminUser',
 ] as const
 
+// Fixed, obvious credentials for the two lower-privileged accounts used by
+// tests/e2e/authorization.spec.ts to prove the role gate in
+// src/lib/auth/guard.ts actually blocks STAFF/ADMIN from routes above their
+// rank. Not derived from ADMIN_SEED_EMAIL/PASSWORD (those stay OWNER-only)
+// so each role's session is unambiguous in test output.
+export const STAFF_CREDENTIALS = {
+  email: 'e2e-staff@example.com',
+  password: 'e2e-staff-password-123',
+} as const
+
+export const ADMIN_CREDENTIALS = {
+  email: 'e2e-admin@example.com',
+  password: 'e2e-admin-password-123',
+} as const
+
 export default async function globalSetup(): Promise<void> {
   const email = process.env.ADMIN_SEED_EMAIL
   const password = process.env.ADMIN_SEED_PASSWORD
@@ -54,6 +69,29 @@ export default async function globalSetup(): Promise<void> {
     const passwordHash = await hashPassword(password)
     await prisma.adminUser.create({
       data: { email: email.toLowerCase(), name: 'E2E Owner', role: 'OWNER', passwordHash },
+    })
+
+    // STAFF and ADMIN accounts for tests/e2e/authorization.spec.ts, which
+    // proves the role gate in src/lib/auth/guard.ts actually blocks access
+    // above each account's rank.
+    const staffPasswordHash = await hashPassword(STAFF_CREDENTIALS.password)
+    await prisma.adminUser.create({
+      data: {
+        email: STAFF_CREDENTIALS.email,
+        name: 'E2E Staff',
+        role: 'STAFF',
+        passwordHash: staffPasswordHash,
+      },
+    })
+
+    const adminPasswordHash = await hashPassword(ADMIN_CREDENTIALS.password)
+    await prisma.adminUser.create({
+      data: {
+        email: ADMIN_CREDENTIALS.email,
+        name: 'E2E Admin',
+        role: 'ADMIN',
+        passwordHash: adminPasswordHash,
+      },
     })
   } finally {
     await prisma.$disconnect()
