@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import type { PrismaClient } from '@prisma/client'
 import { testDb, resetDb } from '../helpers/db'
 import {
   createSession, resolveSession, destroySession,
@@ -9,15 +10,17 @@ import { hashToken } from '@/lib/crypto/tokens'
 beforeEach(resetDb)
 afterAll(() => testDb.$disconnect())
 
-async function makeUser() {
+async function makeUser(email = 'a@example.com', name = 'Ada') {
   return testDb.adminUser.create({
-    data: { email: 'a@example.com', name: 'Ada', passwordHash: 'x', role: 'ADMIN' },
+    data: { email, name, passwordHash: 'x', role: 'ADMIN' },
   })
 }
 
 describe('sessions', () => {
-  it('names the cookie', () => {
-    expect(SESSION_COOKIE).toBe('gala_admin_session')
+  it('uses a valid RFC 6265 cookie-name token', () => {
+    // A tautological `toBe` on the exported constant asserts nothing; this
+    // instead verifies the value is actually usable as a cookie name.
+    expect(SESSION_COOKIE).toMatch(/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/)
   })
 
   it('creates a session resolvable by its token', async () => {
@@ -35,11 +38,13 @@ describe('sessions', () => {
     expect(row?.tokenHash).not.toBe(token)
   })
 
-  it('sets expiry to the configured TTL', async () => {
+  it('sets expiry to the configured TTL, not more and not less', async () => {
     const user = await makeUser()
     const before = Date.now()
     const { expiresAt } = await createSession(testDb, user.id, {})
+    const after = Date.now()
     expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + SESSION_TTL_MS - 1000)
+    expect(expiresAt.getTime()).toBeLessThanOrEqual(after + SESSION_TTL_MS + 1000)
   })
 
   it('returns null for an unknown token', async () => {
@@ -61,11 +66,24 @@ describe('sessions', () => {
     expect(await resolveSession(testDb, token)).toBeNull()
   })
 
-  it('destroys a session', async () => {
-    const user = await makeUser()
+  it('destroys only the targeted session, leaving other users unaffected', async () => {
+    const user = await makeUser('a@example.com', 'Ada')
+    const other = await makeUser('b@example.com', 'Bea')
     const { token } = await createSession(testDb, user.id, {})
+    const { token: otherToken } = await createSession(testDb, other.id, {})
+
     await destroySession(testDb, token)
+
     expect(await resolveSession(testDb, token)).toBeNull()
+    expect(await resolveSession(testDb, otherToken)).toMatchObject({ id: other.id })
+  })
+
+  it('propagates a failing delete instead of swallowing it', async () => {
+    const failingDb = {
+      adminSession: { deleteMany: () => Promise.reject(new Error('db unavailable')) },
+    } as unknown as PrismaClient
+
+    await expect(destroySession(failingDb, 'some-token')).rejects.toThrow('db unavailable')
   })
 
   it('purges only expired sessions', async () => {

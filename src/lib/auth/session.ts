@@ -71,12 +71,15 @@ export async function resolveSession(
   }
 }
 
-/** Deletes the session matching this token, if any. Never throws. */
+/**
+ * Deletes the session matching this token, if any. Database errors propagate
+ * so a failed logout is never mistaken for a successful one — the caller
+ * must not clear the client's cookie or report "signed out" on a delete that
+ * didn't actually happen.
+ */
 export async function destroySession(db: PrismaClient, token: string): Promise<void> {
   if (!token) return
-  await db.adminSession
-    .deleteMany({ where: { tokenHash: hashToken(token) } })
-    .catch(() => undefined)
+  await db.adminSession.deleteMany({ where: { tokenHash: hashToken(token) } })
 }
 
 /** Deletes all sessions past their expiry. Returns the count removed. */
