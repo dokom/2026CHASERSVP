@@ -98,6 +98,26 @@ describe('parseInviteCsv', () => {
     const csv = `${HEADER}\nA,1,,Jordan,Reyes,,,,\n,,,,,,,,\n`
     const { rows } = parseInviteCsv(csv)
     expect(rows).toHaveLength(1)
+    expect(rows[0]?.rowNumber).toBe(2)
+  })
+
+  it('numbers a row after a blank line by its physical line, not array index', () => {
+    const csv = `${HEADER}\nA,1,,Ada,Okafor,,,,\n\nB,1,,Sam,Reyes,,,,`
+    const { rows } = parseInviteCsv(csv)
+    expect(rows.map((r) => r.rowNumber)).toEqual([2, 4])
+  })
+
+  it('numbers a row correctly after several consecutive blank lines', () => {
+    const csv = `${HEADER}\nA,1,,Ada,Okafor,,,,\n\n\n\nB,1,,Sam,Reyes,,,,`
+    const { rows } = parseInviteCsv(csv)
+    expect(rows.map((r) => r.rowNumber)).toEqual([2, 6])
+  })
+
+  it('keeps physical line numbers correct after a quoted embedded newline', () => {
+    const csv = `${HEADER}\nA,1,,Ada,"Oka\nfor",,,,\nB,1,,Sam,Reyes,,,,`
+    const { rows } = parseInviteCsv(csv)
+    expect(rows.map((r) => r.rowNumber)).toEqual([2, 4])
+    expect(rows[0]?.data?.primaryGuest.lastName).toBe('Oka\nfor')
   })
 
   it('returns no rows for a header-only file', () => {

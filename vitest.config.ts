@@ -6,6 +6,10 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     setupFiles: ['./tests/helpers/setup-env.ts'],
+    // Integration tests share one MongoDB database and reset it in beforeEach.
+    // Running files in parallel would let one file's reset wipe another's fixtures
+    // mid-test, producing flakes that look like real failures.
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       include: ['src/lib/**'],
