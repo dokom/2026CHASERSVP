@@ -1,0 +1,23 @@
+import { prisma } from '@/lib/db'
+import { readImage } from '@/lib/media/repository'
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const { id } = await params
+  const asset = await readImage(prisma, id)
+  if (!asset) return new Response('Not found', { status: 404 })
+
+  return new Response(new Uint8Array(asset.bytes), {
+    status: 200,
+    headers: {
+      // From the STORED value that inspectImage derived — never from the request.
+      'Content-Type': asset.mimeType,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': 'inline',
+      // Immutable content at an immutable id; guests fetch this on every visit.
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  })
+}
