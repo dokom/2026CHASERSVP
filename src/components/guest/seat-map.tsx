@@ -20,7 +20,11 @@ export function SeatMap({
       </p>
 
       {floorplanAssetId ? (
-        <div className="relative overflow-hidden rounded border border-[var(--color-border)]">
+        <div
+          className="relative overflow-hidden rounded border border-[var(--color-border)]"
+          data-seat-map
+          style={marker ? { transformOrigin: `${marker.x * 100}% ${marker.y * 100}%` } : undefined}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element -- served from our own
               route handler at unknown intrinsic size; next/image adds no value here */}
           <img
@@ -30,7 +34,7 @@ export function SeatMap({
           />
           {marker ? (
             <span
-              className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--color-ink-deep)] bg-[var(--color-brass)]"
+              className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--color-ink-deep)] bg-[var(--color-brass)] seat-pulse"
               style={{ left: `${marker.x * 100}%`, top: `${marker.y * 100}%` }}
               aria-label={`Table ${table}`}
               data-testid="table-marker"

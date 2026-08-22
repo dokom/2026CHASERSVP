@@ -1,21 +1,142 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ tokens */
 :root {
-  --color-ink: oklch(16% 0.03 265);
-  --color-ink-deep: oklch(9% 0.02 265);
-  --color-bone: oklch(96% 0.01 85);
-  --color-brass: oklch(76% 0.13 78);
-  --color-brass-dim: oklch(62% 0.10 78);
-  --color-surface: oklch(21% 0.03 265);
-  --color-border: oklch(31% 0.02 265);
-  --color-text: oklch(94% 0.01 85);
-  --color-text-muted: oklch(70% 0.01 85);
-  --color-danger: oklch(62% 0.19 25);
-  --color-success: oklch(70% 0.15 150);
+  /* Midnight Gala. Brass is semantic: it marks only what is the guest's own. */
+  --ink:       #0B0F1F;
+  --midnight:  #141A33;
+  --brass:     #C9A24D;
+  --brass-dim: #8C6F2F;
+  --bone:      #EFE9DC;
+  --mist:      #8B90A6;
+  --danger:    #D9604F;
+  --success:   #7FB98F;
+
+  /* Type scale. Display sizes are fluid; the hero is deliberately enormous. */
+  --text-hero:    clamp(3.25rem, 2rem + 9vw, 8.5rem);
+  --text-display: clamp(2rem, 1.4rem + 3.5vw, 4rem);
+  --text-title:   clamp(1.375rem, 1.15rem + 1.2vw, 2rem);
+  --text-body:    clamp(1rem, 0.95rem + 0.3vw, 1.125rem);
+  --text-eyebrow: 0.6875rem;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Aliases the admin screens already reference. Keep them in step above. */
+  --color-ink: var(--midnight);
+  --color-ink-deep: var(--ink);
+  --color-bone: var(--bone);
+  --color-brass: var(--brass);
+  --color-brass-dim: var(--brass-dim);
+  --color-surface: var(--midnight);
+  --color-border: #2A3150;
+  --color-text: var(--bone);
+  --color-text-muted: var(--mist);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
 }
 
+/* Light theme is a designed theme, not an inversion: warm bone ground, same brass. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ink:       #F4EFE4;
+    --midnight:  #FFFFFF;
+    --bone:      #161A2B;
+    --mist:      #5B6078;
+    --color-border: #D9D2C2;
+  }
+}
+:root[data-theme="dark"] {
+  --ink:       #0B0F1F;
+  --midnight:  #141A33;
+  --bone:      #EFE9DC;
+  --mist:      #8B90A6;
+  --color-border: #2A3150;
+}
+
+/* ------------------------------------------------------------------- base */
 body {
-  background: var(--color-ink-deep);
-  color: var(--color-text);
+  background: var(--ink);
+  color: var(--bone);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: var(--text-body);
   -webkit-font-smoothing: antialiased;
+}
+
+.font-serif,
+.type-display {
+  font-family: var(--font-display), "Bodoni Moda", Didot, "Times New Roman", serif;
+  font-variation-settings: "opsz" 72;
+  letter-spacing: -0.01em;
+  line-height: 1.02;
+}
+
+.type-hero    { font-size: var(--text-hero); }
+.type-display { font-size: var(--text-display); }
+.type-title   { font-size: var(--text-title); font-variation-settings: "opsz" 24; }
+
+/* Engraved-caption eyebrows: small caps, wide tracking. */
+.type-eyebrow {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: var(--text-eyebrow);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.22em;
+  color: var(--mist);
+}
+
+/* ------------------------------------------------------------------ grain */
+/* Static film grain. Not animated: animated grain costs continuous paint and
+   is the "effects everywhere" failure mode. 6% is visible on a phone without
+   muddying the type. */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --------------------------------------------------------- reduced motion */
+/* Baseline: the motion layer checks this itself via MotionProvider, but a CSS
+   backstop means nothing moves even if a script fails to load. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Ambient pulse on the guest's own table (Task 8). CSS, not a timeline: it
+   loops, and the reduced-motion backstop above already stops it. The
+   box-shadow is on a 16px element and paints only its own layer — the one
+   deliberate exception to the compositor-only rule, and it is tiny. */
+@keyframes seat-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(201 162 77 / 0.55); }
+  70%      { box-shadow: 0 0 0 14px rgb(201 162 77 / 0); }
+}
+.seat-pulse { animation: seat-pulse 2.4s ease-out infinite; }
+
+/* One-shot brass shimmer after the stamp lands (Task 10). background-position
+   on a text-clipped gradient a few hundred pixels wide — cheap, runs once. */
+@keyframes sealed-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+.sealed-shimmer [data-testid="rsvp-confirmed"] {
+  background: linear-gradient(100deg, var(--bone) 40%, var(--brass) 50%, var(--bone) 60%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sealed-shimmer 1.4s ease-out 1 forwards;
+}
+
+/* Visible keyboard focus everywhere, in brass. */
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
 }

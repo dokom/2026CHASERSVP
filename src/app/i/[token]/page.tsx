@@ -6,6 +6,13 @@ import { GUEST_CSRF_COOKIE } from '@/lib/auth/csrf'
 import { loadGuestPage } from '@/lib/guest/page-data'
 import { AgendaTimeline } from '@/components/guest/agenda-timeline'
 import { SeatMap } from '@/components/guest/seat-map'
+import { MotionProvider } from '@/components/motion/motion-provider'
+import { BrassLine } from '@/components/motion/brass-line'
+import { FoilHero } from '@/components/motion/foil-hero'
+import { Arrival } from '@/components/motion/arrival'
+import { Seal } from '@/components/motion/seal'
+import { Evening } from '@/components/motion/evening'
+import { SeatAct } from '@/components/motion/seat'
 import { RsvpForm } from './rsvp-form'
 
 /** The URL carries a credential: never index it, never leak it in a referrer. */
@@ -38,61 +45,76 @@ export default async function GuestPage({
   const primary = invite.guests.find((guest) => guest.isPrimary) ?? invite.guests[0]
 
   return (
-    <main className="mx-auto max-w-2xl space-y-16 px-6 py-16">
-      <section aria-labelledby="welcome">
-        <h1 id="welcome" className="font-serif text-4xl">
-          Welcome, {primary ? primary.firstName : invite.label}.
-        </h1>
-        {event.tagline ? (
-          <p className="mt-3 text-[var(--color-text-muted)]">{event.tagline}</p>
-        ) : null}
-      </section>
+    <MotionProvider>
+      <main data-guest-root className="grain relative mx-auto max-w-2xl space-y-24 px-6 py-16">
+        <BrassLine />
+        <FoilHero />
 
-      <section aria-labelledby="event" className="space-y-2">
-        <h2 id="event" className="font-serif text-3xl text-[var(--color-brass)]">{event.name}</h2>
-        <p>
-          <time dateTime={event.startsAt.toISOString()}>
-            {new Intl.DateTimeFormat('en-US', {
-              dateStyle: 'full', timeStyle: 'short', timeZone: event.timezone,
-            }).format(event.startsAt)}
-          </time>
-        </p>
-        <p className="text-[var(--color-text-muted)]">{event.venueName}, {event.address}</p>
-        {event.dressCode ? <p className="text-sm">Dress code: {event.dressCode}</p> : null}
-        <a href={`/i/${encodeURIComponent(token)}/calendar`} className="inline-block pt-2 underline underline-offset-4">
-          Add to calendar
-        </a>
-      </section>
+        <Arrival>
+          <section aria-labelledby="welcome" className="relative z-10">
+            <Seal />
+            <h1 id="welcome" className="type-display">
+              Welcome,{' '}
+              <span data-guest-name className="type-hero block text-[var(--brass)]">
+                {primary ? primary.firstName : invite.label}
+              </span>
+            </h1>
+            {event.tagline ? (
+              <p className="mt-3 text-[var(--color-text-muted)]">{event.tagline}</p>
+            ) : null}
+          </section>
+        </Arrival>
 
-      {event.agendaItems.length > 0 ? (
-        <section aria-labelledby="evening" className="space-y-6">
-          <h2 id="evening" className="font-serif text-3xl">The evening</h2>
-          <AgendaTimeline items={event.agendaItems} timezone={event.timezone} />
-        </section>
-      ) : null}
-
-      {table ? (
-        <section aria-labelledby="seat" className="space-y-4">
-          <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
-          <SeatMap floorplanAssetId={event.floorplanAssetId} marker={marker} table={table} />
-        </section>
-      ) : null}
-
-      <section aria-labelledby="rsvp" className="space-y-4">
-        <h2 id="rsvp" className="font-serif text-3xl">Your response</h2>
-        {window.isOpen ? (
-          <RsvpForm token={token} invite={invite} mealOptions={event.mealOptions} csrf={csrf} />
-        ) : (
-          <p role="status" className="rounded border border-[var(--color-border)] p-4">
-            RSVPs closed on{' '}
-            <time dateTime={window.closesAt.toISOString()}>
-              {new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: event.timezone })
-                .format(window.closesAt)}
+        <section aria-labelledby="event" className="relative z-10 space-y-2">
+          <h2 id="event" className="font-serif text-3xl text-[var(--color-brass)]">{event.name}</h2>
+          <p>
+            <time dateTime={event.startsAt.toISOString()}>
+              {new Intl.DateTimeFormat('en-US', {
+                dateStyle: 'full', timeStyle: 'short', timeZone: event.timezone,
+              }).format(event.startsAt)}
             </time>
-            . Please contact the organiser if you need to change your response.
           </p>
-        )}
-      </section>
-    </main>
+          <p className="text-[var(--color-text-muted)]">{event.venueName}, {event.address}</p>
+          {event.dressCode ? <p className="text-sm">Dress code: {event.dressCode}</p> : null}
+          <a href={`/i/${encodeURIComponent(token)}/calendar`} className="inline-block pt-2 underline underline-offset-4">
+            Add to calendar
+          </a>
+        </section>
+
+        {event.agendaItems.length > 0 ? (
+          <Evening>
+            <section aria-labelledby="evening" className="relative z-10 space-y-6">
+              <h2 id="evening" className="font-serif text-3xl">The evening</h2>
+              <AgendaTimeline items={event.agendaItems} timezone={event.timezone} />
+            </section>
+          </Evening>
+        ) : null}
+
+        {table ? (
+          <SeatAct>
+            <section aria-labelledby="seat" className="relative z-10 space-y-4">
+              <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
+              <SeatMap floorplanAssetId={event.floorplanAssetId} marker={marker} table={table} />
+            </section>
+          </SeatAct>
+        ) : null}
+
+        <section aria-labelledby="rsvp" className="relative z-10 space-y-4">
+          <h2 id="rsvp" className="font-serif text-3xl">Your response</h2>
+          {window.isOpen ? (
+            <RsvpForm token={token} invite={invite} mealOptions={event.mealOptions} csrf={csrf} />
+          ) : (
+            <p role="status" className="rounded border border-[var(--color-border)] p-4">
+              RSVPs closed on{' '}
+              <time dateTime={window.closesAt.toISOString()}>
+                {new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: event.timezone })
+                  .format(window.closesAt)}
+              </time>
+              . Please contact the organiser if you need to change your response.
+            </p>
+          )}
+        </section>
+      </main>
+    </MotionProvider>
   )
 }
