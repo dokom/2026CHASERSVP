@@ -12,8 +12,13 @@ test.describe('admin access control', () => {
   })
 
   test('rejects bad credentials with a visible error', async ({ page }) => {
+    // Unique per test run so two projects (mobile/desktop) running this
+    // test in the same suite invocation never share a rate-limit counter.
+    // See tests/e2e/global-setup.ts for the cross-run cleanup of the same
+    // underlying LoginAttempt table.
+    const email = `nobody-${Date.now()}@example.com`
     await page.goto('/admin/login')
-    await page.getByLabel('Email').fill('nobody@example.com')
+    await page.getByLabel('Email').fill(email)
     await page.getByLabel('Password').fill('definitely-wrong')
     await page.getByRole('button', { name: 'Sign in' }).click()
     // Next.js also renders a hidden route-announcer div with role="alert" on

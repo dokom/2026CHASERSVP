@@ -13,6 +13,11 @@ test.describe('invite management', () => {
     await signIn(page)
     await page.goto('/admin/invites')
 
+    // "Add a single invite" is a collapsed <details> disclosure by design
+    // (the page is a list first, a create form second) — open it before
+    // interacting with the fields inside.
+    await page.locator('summary', { hasText: 'Add a single invite' }).click()
+
     const label = `Okafor Party ${Date.now()}`
     await page.getByLabel('Invite label').fill(label)
     await page.getByLabel('Seats').fill('2')
@@ -48,7 +53,13 @@ test.describe('invite management', () => {
     await expect(link).toBeVisible()
     await expect(link).toContainText('/i/')
 
-    await page.reload()
+    // page.reload() re-requests the SAME url, including the ?inviteUrl=...
+    // query string, so the token would still render — that's not what's
+    // worth proving. The token isn't persisted server-side, so navigating
+    // to the bare detail URL (no query string), as an operator normally
+    // would, must never re-display it.
+    const bareUrl = page.url().split('?')[0] ?? page.url()
+    await page.goto(bareUrl)
     await expect(page.getByTestId('invite-url')).toHaveCount(0)
   })
 

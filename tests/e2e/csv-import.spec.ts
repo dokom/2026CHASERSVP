@@ -47,6 +47,11 @@ test.describe('CSV import', () => {
     await signIn(page)
     await page.goto('/admin/invites/import')
     await upload(page, 'label,seatsAllotted\nA,1')
-    await expect(page.getByRole('alert')).toContainText('primaryFirstName')
+    // Next.js also renders a hidden route-announcer div with role="alert" on
+    // every page (for accessibility route-change announcements), so the
+    // locator must be scoped to the element carrying the error text.
+    await expect(page.getByRole('alert').filter({ hasText: 'primaryFirstName' })).toContainText(
+      'primaryFirstName',
+    )
   })
 })
