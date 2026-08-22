@@ -1848,6 +1848,24 @@ its own on first run."
 
 ---
 
+---
+
+## AS-BUILT DIVERGENCES — read before re-running any task from this plan
+
+| Module | Plan text is stale because | Read instead |
+| --- | --- | --- |
+| `src/components/motion/brass-line.tsx` (Task 4) | The plan read `offsetWidth`/`offsetHeight` on an `<svg>`. Those are HTMLElement properties; on an SVGElement they are `undefined`, so the path was built from `NaN` and **the line never drew**. Found only by an agent scrolling the page and looking. Uses `getBoundingClientRect()` now. | the file |
+| `src/components/motion/seat.tsx` (Task 8) | The plan's `onScroll` threshold strings had the words in the wrong order. Anime v4 parses **container-first, target-second**; the plan wrote target-first, so the plan never zoomed. | the file |
+| `src/components/motion/foil-scene.tsx` (Task 6) | `AdditiveBlending` on the light theme's bone ground produced a bright yellow smear across the hero. Light scheme now uses normal blending with darker, fainter flecks; the component reads `matchMedia` for the scheme — the one sanctioned exception to "only MotionProvider reads media queries", because it is already browser-only and mode-gated. | the file |
+| `src/app/i/[token]/page.tsx`, `agenda-timeline.tsx` (Tasks 7, 11) | The event title and the agenda times shipped in brass, against the design plan's central rule. Title is bone, times are mist. | the files |
+
+### What the plan got right that is worth keeping
+
+The "look at it" steps. Both line-drawing bugs above were invisible to typecheck, lint, 376
+unit tests and 90 end-to-end specs. They were found because Task 11 required an agent to
+scroll a real invite at 375px and say what it saw, and because the controller then read the
+screenshots rather than the report. For a motion layer, a picture is the test.
+
 ## Definition of done
 
 - [ ] `npx vitest run`, `npm run typecheck`, `npm run lint`, `npm run build` all clean

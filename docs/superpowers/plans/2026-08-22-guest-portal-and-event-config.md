@@ -3956,6 +3956,32 @@ git commit -m "test: end-to-end coverage for the guest portal and event configur
 
 ---
 
+---
+
+## AS-BUILT DIVERGENCES — read before re-running any task from this plan
+
+The code in this plan is the code that was *dispatched*. A security review of the guest
+attack surface found defects, and **the working tree is now the source of truth, not this
+document**. Re-running a task below from the plan text would faithfully reintroduce a fixed bug.
+
+| Module | Plan text is stale because | Read instead |
+| --- | --- | --- |
+| `src/lib/guest/rsvp.ts` (Task 5) | Resubmitting an RSVP silently destroyed `isPrimary`, `tableNumber` and `checkedInAt`: entries without an id were created fresh and unresubmitted guests deleted. Stripping the hidden id inputs in devtools wiped a party's seat assignment and door check-in state. Now preserves those fields on update and refuses to delete a guest who has already checked in. Also validates `mealOptionId` against the event's active options (any ObjectId was written through) and rejects duplicate ids (`[id1, id1]` deleted a party member). | the file |
+| `src/lib/auth/csrf.ts`, `src/middleware.ts` (Task 6) | One CSRF cookie at path `/` served both the admin panel and the unauthenticated guest portal, so the admin double-submit secret was rendered into a public page. The guest surface now has its own cookie, `gala_guest_csrf`. | the files |
+| `src/app/api/media/[id]/route.ts` (Task 12) | Served ANY `MediaAsset` row, cached immutable for a year, to anyone. Now serves only the current event's floorplan. | the file |
+| `src/lib/media/images.ts` (Task 11) | `readWebp` accepted `VP8X`/`VP8L` containers while parsing lossy-VP8 offsets and returned garbage dimensions. Now rejects what it cannot parse. A total-pixel cap was added. **Known limitation, by design:** dimensions are self-declared and the payload is not decoded, so a header-only "PNG" passes validation and renders as a broken image. Serving is still safe — stored Content-Type plus `nosniff` means the browser never executes it. | the file |
+| `src/app/i/[token]/actions.ts` (Task 9) | Uses `GUEST_CSRF_COOKIE`, not `CSRF_COOKIE`, after the split above. | the file |
+| `tests/integration/calendar-route.test.ts` (Task 10) | Both DTEND branches expected the same value (22:00+1h == 18:00+5h), so deleting the agenda branch entirely left both green. Fixtures changed so the branches differ. | the file |
+
+### Tests this plan shipped that could not fail
+
+Six, all rewritten: the idempotency test carried no ids (so it passed against the data loss
+above); both calendar branches expected identical output; `csrf-routes` tested a predicate
+middleware never called; the media tests used a 33-byte non-image and never exercised a
+trailing payload; an audit test used JSON length as a proxy for "no bytes recorded"; and the
+bad-CSRF E2E posted a URL-encoded body to a form that binds a real Server Action (multipart,
+soft error state) — it had to intercept the real POST and tamper the field in flight.
+
 ## Definition of done
 
 - [ ] `npx vitest run`, `npm run typecheck`, `npm run lint` and `npm run build` all clean
