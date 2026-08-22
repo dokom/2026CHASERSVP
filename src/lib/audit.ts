@@ -24,15 +24,52 @@ const MAX_META_BYTES = 16 * 1024
 
 type RedactState = { nodes: number }
 
+/**
+ * A value `redact()` guarantees to produce: the recursive JSON-representable
+ * subset of `unknown`, matching what Prisma's `InputJsonValue` accepts. This
+ * is what makes `redact()`'s return type honest — every non-serializable
+ * input (bigint, function, symbol, undefined, Date, or any other exotic
+ * object) is coerced to one of these by `redactPrimitive` before it can
+ * reach the caller.
+ */
+type JsonSafeValue = string | number | boolean | null | JsonSafeValue[] | { [key: string]: JsonSafeValue }
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null) return false
   const proto = Object.getPrototypeOf(value)
   return proto === Object.prototype || proto === null
 }
 
+function isJsonSafeRecord(value: JsonSafeValue): value is Record<string, JsonSafeValue> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function truncateString(value: string): string {
   if (value.length <= MAX_STRING_LEN) return value
   return `${value.slice(0, MAX_STRING_LEN)}${TRUNCATE_SUFFIX}`
+}
+
+/**
+ * Coerces a non-container leaf value into something JSON can represent.
+ * `bigint`, `function`, and `symbol` values can never reach `JSON.stringify`
+ * without throwing, so each becomes a descriptive marker string; `undefined`
+ * likewise becomes a marker rather than being silently dropped from its
+ * parent object (dropping it would change the shape callers see back).
+ * `Date` becomes its ISO string, since audit metadata plausibly carries
+ * timestamps and that's the only lossless JSON representation available.
+ * Any other non-plain-object value (e.g. a class instance, `Map`, `RegExp`)
+ * falls back to a generic marker rather than passing through unredacted.
+ */
+function redactPrimitive(value: unknown): JsonSafeValue {
+  if (value === undefined) return '[undefined]'
+  if (typeof value === 'bigint') return `[bigint:${value.toString()}]`
+  if (typeof value === 'function') return '[function]'
+  if (typeof value === 'symbol') return '[symbol]'
+  if (value instanceof Date) return value.toISOString()
+  if (value === null) return null
+  if (typeof value === 'string') return truncateString(value)
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  return '[unsupported]'
 }
 
 /**
@@ -46,7 +83,7 @@ function redactContainer(
   depth: number,
   ancestors: Set<unknown>,
   state: RedactState,
-): unknown {
+): JsonSafeValue {
   if (ancestors.has(value)) return '[circular]'
   if (depth >= MAX_DEPTH) return '[truncated]'
   const nextAncestors = new Set(ancestors)
@@ -55,7 +92,7 @@ function redactContainer(
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item, null, depth + 1, nextAncestors, state))
   }
-  const out: Record<string, unknown> = {}
+  const out: Record<string, JsonSafeValue> = {}
   for (const [k, v] of Object.entries(value)) {
     out[k] = state.nodes > MAX_NODES
       ? '[truncated]'
@@ -70,23 +107,24 @@ function redactValue(
   depth: number,
   ancestors: Set<unknown>,
   state: RedactState,
-): unknown {
+): JsonSafeValue {
   state.nodes += 1
   if (state.nodes > MAX_NODES) return '[truncated]'
   if (key !== null && REDACTED_KEYS.has(key)) return '[redacted]'
-  if (typeof value === 'string') return truncateString(value)
   if (Array.isArray(value)) return redactContainer(value, depth, ancestors, state)
   if (isPlainObject(value)) return redactContainer(value, depth, ancestors, state)
-  return value
+  return redactPrimitive(value)
 }
 
 /**
  * Caps the total serialized size of an already-redacted meta document. If it
  * still exceeds the cap (or can't be serialized at all), the whole thing is
  * replaced with a small marker rather than thrown — an audit write must
- * never be able to fail the transaction it's recording.
+ * never be able to fail the transaction it's recording. `redact()` already
+ * produces a `JsonSafeValue` tree, so the `JSON.stringify` failure branch is
+ * a defense-in-depth backstop rather than an expected path.
  */
-function capMetaSize(meta: Record<string, unknown>): Record<string, unknown> {
+function capMetaSize(meta: Record<string, JsonSafeValue>): Record<string, JsonSafeValue> {
   let serialized: string
   try {
     serialized = JSON.stringify(meta)
@@ -97,10 +135,15 @@ function capMetaSize(meta: Record<string, unknown>): Record<string, unknown> {
   return { _dropped: true, reason: 'meta exceeded size limit after truncation' }
 }
 
-function redact(meta: Record<string, unknown>): Record<string, unknown> {
+function redact(meta: Record<string, unknown>): Record<string, JsonSafeValue> {
   const state: RedactState = { nodes: 0 }
-  const redacted = redactValue(meta, null, 0, new Set(), state) as Record<string, unknown>
-  return capMetaSize(redacted)
+  const redacted = redactValue(meta, null, 0, new Set(), state)
+  // `meta`'s parameter type guarantees a plain object, so `redactValue`
+  // always takes the `isPlainObject` branch here and this narrowing always
+  // succeeds; the fallback exists only so a future caller who defeats that
+  // guarantee at runtime still gets a valid (empty) record instead of a
+  // thrown error, preserving the never-throw guarantee.
+  return capMetaSize(isJsonSafeRecord(redacted) ? redacted : {})
 }
 
 /**

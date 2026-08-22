@@ -123,4 +123,24 @@ describe('writeAudit', () => {
     const meta = row?.meta as { _dropped: boolean }
     expect(meta._dropped).toBe(true)
   })
+
+  it('writes a row when meta contains non-JSON-serializable values instead of throwing', async () => {
+    const when = new Date('2026-01-15T12:00:00.000Z')
+    await writeAudit(testDb, {
+      actorId: null,
+      action: 'test.nonSerializable',
+      entity: 'Invite',
+      meta: { count: 10n, when, fn: () => {}, sym: Symbol('x'), missing: undefined, label: 'ok' },
+    })
+    const row = await testDb.auditLog.findFirst()
+    const meta = row?.meta as {
+      count: string; when: string; fn: string; sym: string; missing: string; label: string
+    }
+    expect(meta.count).toBe('[bigint:10]')
+    expect(meta.when).toBe(when.toISOString())
+    expect(meta.fn).toBe('[function]')
+    expect(meta.sym).toBe('[symbol]')
+    expect(meta.missing).toBe('[undefined]')
+    expect(meta.label).toBe('ok')
+  })
 })
