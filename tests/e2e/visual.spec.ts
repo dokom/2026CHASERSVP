@@ -1,10 +1,61 @@
 import { test, expect } from '@playwright/test'
+import { PrismaClient } from '@prisma/client'
 import { E2E_GUEST_TOKEN } from './global-setup'
 import { signIn } from './sign-in'
 import { ADMIN_CREDENTIALS } from './global-setup'
+import { E2E_DATABASE_URL } from '../../playwright.config'
 
 const WIDTHS = [375, 768, 1440] as const
 const SCHEMES = ['dark', 'light'] as const
+
+/**
+ * guest-rsvp.spec.ts, event-config.spec.ts and motion.spec.ts all mutate
+ * the single fixture invite/guest/event global-setup seeds once per run,
+ * and never revert it — each of those specs only asserts on behavior, so
+ * an accumulating name change, event rename or extra agenda item is
+ * invisible to them. This suite is the first to assert pixel-for-pixel, so
+ * it restores the fixture to its as-seeded values immediately before
+ * capturing, making the screenshots independent of whichever specs already
+ * ran earlier in this worker/project pass.
+ */
+async function restoreFixtureState(): Promise<void> {
+  const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+  try {
+    const invite = await prisma.invite.findFirstOrThrow({ where: { label: 'E2E Guest Party' } })
+    await prisma.guest.deleteMany({ where: { inviteId: invite.id } })
+    await prisma.guest.create({
+      data: { inviteId: invite.id, firstName: 'Riley', lastName: 'Chen', isPrimary: true },
+    })
+    await prisma.invite.update({
+      where: { id: invite.id },
+      data: {
+        status: 'PENDING',
+        respondedAt: null,
+        extraSeatsRequested: 0,
+        extraSeatsStatus: 'NONE',
+      },
+    })
+
+    const event = await prisma.event.findFirstOrThrow()
+    await prisma.event.update({ where: { id: event.id }, data: { name: 'The Grand Gala' } })
+    await prisma.agendaItem.deleteMany({ where: { eventId: event.id } })
+    await prisma.agendaItem.createMany({
+      data: [
+        {
+          eventId: event.id,
+          title: 'Cocktail Reception',
+          startsAt: new Date(event.startsAt.getTime() - 60 * 60 * 1000),
+          sortOrder: 0,
+        },
+        { eventId: event.id, title: 'Dinner & Dancing', startsAt: event.startsAt, sortOrder: 1 },
+      ],
+    })
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+test.beforeAll(restoreFixtureState)
 
 for (const width of WIDTHS) {
   for (const scheme of SCHEMES) {
