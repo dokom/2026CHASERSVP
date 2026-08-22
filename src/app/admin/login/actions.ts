@@ -45,8 +45,12 @@ export async function loginAction(_prev: string | null, formData: FormData): Pro
   redirect(landingPathFor(result.user.role))
 }
 
-export async function logoutAction(): Promise<void> {
+export async function logoutAction(formData: FormData): Promise<void> {
   const store = await cookies()
+  if (!verifyCsrfToken(store.get(CSRF_COOKIE)?.value, formData.get('csrf'))) {
+    throw new Error('Invalid CSRF token')
+  }
+
   const token = store.get(SESSION_COOKIE)?.value
   if (token) await destroySession(prisma, token)
   store.delete(SESSION_COOKIE)
