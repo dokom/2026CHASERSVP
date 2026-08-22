@@ -10,13 +10,13 @@ export default async function LoginPage() {
   const user = await getCurrentUser()
   if (user) redirect(landingPathFor(user.role))
 
-  // Next.js forbids `cookies().set()` inside a Server Component's render —
-  // it is only permitted in a Server Action or Route Handler. When the CSRF
-  // cookie is missing, hand off to the Route Handler that is allowed to set
-  // it; it redirects straight back here once the cookie is in place.
+  // src/middleware.ts guarantees the CSRF cookie exists for every /admin
+  // request before this Server Component renders, so this is a plain read.
+  // If it is somehow still missing, fail loudly rather than silently
+  // rendering a form with an empty CSRF field.
   const store = await cookies()
   const csrf = store.get(CSRF_COOKIE)?.value
-  if (!csrf) redirect('/admin/login/csrf')
+  if (!csrf) throw new Error('CSRF cookie missing — middleware should have set it')
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">

@@ -27,6 +27,11 @@
 - Files stay under 400 lines. Functions stay under 50 lines.
 - Test coverage floor: 80%.
 - Secrets come from `src/lib/env.ts` only. No direct `process.env` access outside that file.
+- **Never call `cookies().set()` inside a Server Component render.** Next.js forbids it
+  unconditionally and the page 500s in production while every unit and integration test
+  stays green. Cookie writes belong in a Server Action, a Route Handler, or
+  `src/middleware.ts`. The CSRF cookie is bootstrapped by middleware for all `/admin/*`
+  routes; page components and `CsrfInput` only ever READ it.
 
 ---
 
@@ -3089,19 +3094,20 @@ Expected: FAIL — `/admin/users` 404s.
 
 ```tsx
 import { cookies } from 'next/headers'
-import { CSRF_COOKIE, issueCsrfToken } from '@/lib/auth/csrf'
+import { CSRF_COOKIE } from '@/lib/auth/csrf'
 
+/**
+ * Renders the CSRF field for a form. READ-ONLY by design: Next.js forbids
+ * `cookies().set()` during a Server Component render, and doing it anyway
+ * 500s the page in production while every unit and integration test stays
+ * green. `src/middleware.ts` guarantees the cookie exists on every
+ * `/admin/*` request before render, so this component only ever reads it.
+ */
 export async function CsrfInput() {
   const store = await cookies()
-  let token = store.get(CSRF_COOKIE)?.value
+  const token = store.get(CSRF_COOKIE)?.value
   if (!token) {
-    token = issueCsrfToken()
-    store.set(CSRF_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    })
+    throw new Error('CSRF cookie missing — check that src/middleware.ts matches this route')
   }
   return <input type="hidden" name="csrf" value={token} />
 }
@@ -5217,23 +5223,18 @@ export function ImportForm({ csrf }: { csrf: string }) {
 ```tsx
 import { cookies } from 'next/headers'
 import { requireRole } from '@/lib/auth/guard'
-import { CSRF_COOKIE, issueCsrfToken } from '@/lib/auth/csrf'
+import { CSRF_COOKIE } from '@/lib/auth/csrf'
 import { CSV_COLUMNS, csvTemplate } from '@/lib/invites/csv'
 import { ImportForm } from './import-form'
 
 export default async function ImportPage() {
   await requireRole('ADMIN')
 
+  // Read-only: middleware guarantees the cookie. See CsrfInput in Task 15.
   const store = await cookies()
-  let csrf = store.get(CSRF_COOKIE)?.value
+  const csrf = store.get(CSRF_COOKIE)?.value
   if (!csrf) {
-    csrf = issueCsrfToken()
-    store.set(CSRF_COOKIE, csrf, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    })
+    throw new Error('CSRF cookie missing — check that src/middleware.ts matches this route')
   }
 
   return (
