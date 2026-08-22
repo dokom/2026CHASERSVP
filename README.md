@@ -56,7 +56,7 @@ every run, so you never need to push to it by hand.
 | `npm run test:coverage` | Same tests, with the 80% coverage gate enforced |
 | `npm run test:e2e` | Playwright end-to-end tests |
 | `npm run typecheck` | TypeScript, no emit |
-| `npm run lint` | `next lint` — currently non-functional; Next.js 16 removed the `next lint` command. Not run in CI. |
+| `npm run lint` | ESLint 9 flat config (`eslint-config-next` + TypeScript). Run in CI after typecheck. |
 | `npm run build` | Production build (`prisma generate && next build`) |
 | `npm run db:start` | Local single-node MongoDB replica set on port 27018 |
 | `npm run db:push` | Sync the Prisma schema to `DATABASE_URL` |

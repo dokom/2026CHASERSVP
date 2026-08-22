@@ -68,6 +68,9 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
       # Enforces the 80% lines/functions/branches/statements thresholds already
       # configured in vitest.config.ts.
       - name: Unit + integration tests (with coverage gate)
