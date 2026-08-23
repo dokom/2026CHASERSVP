@@ -1691,6 +1691,15 @@ The working tree is the source of truth, not this document.
 | `src/components/admin/status-pill.tsx`, `globals.css` | The light-theme "declined" pill failed WCAG AA at 3.19:1. New `--danger-ink` / `--success-ink` tokens. | the files |
 | `tests/e2e/{checkin,perf,visual}.spec.ts` (Task 10) | Four tests certified properties they did not test: the offline test never reloaded while offline; a badge assertion resolved before the badge could exist; the perf budget subtracted an uncapped, signature-matched chunk; and the dashboard baseline encoded whatever earlier specs left behind, reproducing identically because spec order is fixed — "green twice" proved consistency, not correctness. All rewritten. | the files |
 
+### MongoDB gotcha found during the fix wave — worth knowing everywhere
+
+A field that was never written is **absent**, not `null`. `where: { checkedInAt: null }` matched zero freshly-created guests, so the atomic idempotency guard needs `OR: [{ checkedInAt: null }, { checkedInAt: { isSet: false } }]`. Any "not yet set" filter in this codebase needs the same pair. (Prisma's `isSet` is MongoDB-only.)
+
+### Two narrow follow-ups the re-review filed, not fixed
+
+- **Undo/flush resurrection.** An undo removes the queue item and DELETEs, while an in-flight flush iterating its pre-undo snapshot may still POST that guest; if the POST lands after the DELETE the guest is re-marked arrived. Narrow window, recoverable by a second undo.
+- **Tap-during-flush latency.** A tap landing mid-flush is durably queued but not transmitted until the next 15-second tick. Correct, just slow.
+
 ### Packages
 
 Both new dependencies were installed by the controller before dispatch, not by Tasks 4 and 10 as written: an `npm install` running while sibling agents typecheck corrupts `node_modules`.
