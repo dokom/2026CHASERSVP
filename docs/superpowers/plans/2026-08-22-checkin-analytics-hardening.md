@@ -1674,6 +1674,31 @@ git commit -m "docs: door check-in and going-live checklist"
 - [ ] The guest route ships under 150 KB of script on a low-tier device, measured, with the number in the CI log
 - [ ] The 1440 guest page is composed, not a phone column in a wide frame; 375 and 768 are byte-identical to before
 
+---
+
+## AS-BUILT DIVERGENCES — read before re-running any task from this plan
+
+The working tree is the source of truth, not this document.
+
+| Module | Plan text is stale because | Read instead |
+| --- | --- | --- |
+| `src/lib/audit-log/query.ts` (Task 7) | The plan said `src/lib/audit/query.ts`. `src/lib/audit.ts` already exists as a file, and a sibling directory of the same name makes `@/lib/audit` ambiguous. | the file |
+| `src/app/admin/checkin/scanner.tsx` (Task 4) | The plan's zxing snippet used `decodeFromVideoElement` / `.getText()`, which do not match the installed `@zxing/browser@0.2.1`; the real API is `decodeOnceFromVideoElement`. **Then the security review found two Critical defects in the plan's own code:** `flush()` persisted a stale IndexedDB snapshot, silently erasing any tap made during a flush; and the manual-entry `<form>` had no `action`/`method`, so a pre-hydration Enter did a native GET that put the invite token in the URL. Both rewritten: read-modify-write against IndexedDB under an in-flight guard, and no `<form>` at all. | the file |
+| `src/app/api/admin/checkin/guests/[id]/route.ts`, `src/lib/validation/checkin.ts` (Task 3) | The plan validated only that the guest id was 24 hex and never tied it to a party — a STAFF session could enumerate ObjectIds and check in, undo, or probe any guest. The POST/DELETE bodies now carry the invite token and the route verifies membership before any write. | the files |
+| `src/lib/checkin/repository.ts` (Task 1) | The plan's idempotency was read-then-write; two overlapping replays both audited. Now `updateMany` on `checkedInAt: null` with the audit row written only when `count === 1`. | the file |
+| `src/lib/stats/rsvp.ts` (Task 5) | `dashboard()` took a `now` it never read. Removed. | the file |
+| `src/app/i/[token]/page.tsx` (Task 9) | The `lg:grid` wrapper silently dropped the inter-section gap below `lg`; restored with a flex column. | the file |
+| `src/components/admin/status-pill.tsx`, `globals.css` | The light-theme "declined" pill failed WCAG AA at 3.19:1. New `--danger-ink` / `--success-ink` tokens. | the files |
+| `tests/e2e/{checkin,perf,visual}.spec.ts` (Task 10) | Four tests certified properties they did not test: the offline test never reloaded while offline; a badge assertion resolved before the badge could exist; the perf budget subtracted an uncapped, signature-matched chunk; and the dashboard baseline encoded whatever earlier specs left behind, reproducing identically because spec order is fixed — "green twice" proved consistency, not correctness. All rewritten. | the files |
+
+### Packages
+
+Both new dependencies were installed by the controller before dispatch, not by Tasks 4 and 10 as written: an `npm install` running while sibling agents typecheck corrupts `node_modules`.
+
+### What the plan got right
+
+The "two numbers I want in your return" instruction. The proof agent reported 139,874 bytes and zero axe violations rather than "under budget" and "clean" — and the number is what let the reviewer notice the budget's subtraction was escapable.
+
 ## Deliberately not in this plan
 
 - **Email-scoped login lockout.** The targeted-DoS finding stands; the spec specifies the behaviour; the owner has not ruled. Not changed.

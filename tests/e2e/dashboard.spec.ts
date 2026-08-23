@@ -45,7 +45,7 @@ test.describe('dashboard and guest list', () => {
     const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
     let expected: Awaited<ReturnType<typeof dashboard>>
     try {
-      expected = await dashboard(prisma, new Date())
+      expected = await dashboard(prisma)
     } finally {
       await prisma.$disconnect()
     }
