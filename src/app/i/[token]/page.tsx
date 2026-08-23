@@ -46,7 +46,7 @@ export default async function GuestPage({
 
   return (
     <MotionProvider>
-      <main data-guest-root className="relative mx-auto max-w-2xl overflow-x-clip space-y-24 px-6 py-16">
+      <main data-guest-root className="relative mx-auto max-w-2xl lg:max-w-4xl overflow-x-clip space-y-24 px-6 py-16">
         <BrassLine />
         <FoilHero />
 
@@ -91,23 +91,25 @@ export default async function GuestPage({
           </a>
         </section>
 
-        {event.agendaItems.length > 0 ? (
-          <Evening>
-            <section aria-labelledby="evening" className="relative z-10 space-y-6 pl-12">
-              <h2 id="evening" className="font-serif text-3xl">The evening</h2>
-              <AgendaTimeline items={event.agendaItems} timezone={event.timezone} />
-            </section>
-          </Evening>
-        ) : null}
+        <div className="lg:grid lg:grid-cols-2 lg:gap-12">
+          {event.agendaItems.length > 0 ? (
+            <Evening>
+              <section aria-labelledby="evening" className="relative z-10 space-y-6 pl-12">
+                <h2 id="evening" className="font-serif text-3xl">The evening</h2>
+                <AgendaTimeline items={event.agendaItems} timezone={event.timezone} />
+              </section>
+            </Evening>
+          ) : null}
 
-        {table ? (
-          <SeatAct>
-            <section aria-labelledby="seat" className="relative z-10 space-y-4 pl-12">
-              <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
-              <SeatMap floorplanAssetId={event.floorplanAssetId} marker={marker} table={table} />
-            </section>
-          </SeatAct>
-        ) : null}
+          {table ? (
+            <SeatAct>
+              <section aria-labelledby="seat" className="relative z-10 space-y-4 pl-12">
+                <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
+                <SeatMap floorplanAssetId={event.floorplanAssetId} marker={marker} table={table} />
+              </section>
+            </SeatAct>
+          ) : null}
+        </div>
 
         <section aria-labelledby="rsvp" className="relative z-10 space-y-4 pl-12">
           <h2 id="rsvp" className="font-serif text-3xl">Your response</h2>

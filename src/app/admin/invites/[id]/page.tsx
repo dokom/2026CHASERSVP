@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import Script from 'next/script'
 import { prisma } from '@/lib/db'
@@ -57,6 +57,9 @@ export default async function InviteDetailPage({
   const revealUrl = cookieStore.get(INVITE_REVEAL_COOKIE)?.value
   const alreadySeen = cookieStore.get(INVITE_REVEAL_SEEN_COOKIE)?.value === '1'
   const showReveal = Boolean(revealUrl) && !alreadySeen
+  // The nonce `src/proxy.ts` minted for this request — required for a
+  // next/script instance to run under the strict, nonce-gated script-src.
+  const nonce = (await headers()).get('x-nonce') ?? undefined
 
   return (
     <section className="space-y-8">
@@ -79,7 +82,7 @@ export default async function InviteDetailPage({
           <code data-testid="invite-url" className="break-all text-sm text-[var(--brass-ink)]">
             {revealUrl}
           </code>
-          <Script id={`invite-reveal-seen-${invite.id}`} strategy="afterInteractive">
+          <Script id={`invite-reveal-seen-${invite.id}`} strategy="afterInteractive" nonce={nonce}>
             {markRevealSeenScript(invite.id)}
           </Script>
         </div>

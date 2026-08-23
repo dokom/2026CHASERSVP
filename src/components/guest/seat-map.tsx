@@ -21,7 +21,7 @@ export function SeatMap({
 
       {floorplanAssetId ? (
         <div
-          className="relative overflow-hidden rounded border border-[var(--color-border)]"
+          className="relative overflow-hidden rounded border border-[var(--color-border)] lg:max-w-md"
           data-seat-map
           style={marker ? { transformOrigin: `${marker.x * 100}% ${marker.y * 100}%` } : undefined}
         >

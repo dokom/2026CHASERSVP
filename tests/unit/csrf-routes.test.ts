@@ -4,7 +4,7 @@ import {
   matchesAdminCsrfRoute,
   matchesGuestCsrfRoute,
 } from '@/lib/auth/csrf-routes'
-import { config } from '@/middleware'
+import { config } from '@/proxy'
 
 describe('matchesAdminCsrfRoute', () => {
   it('covers the admin panel', () => {
@@ -52,33 +52,38 @@ describe('matchesCsrfRoute', () => {
 })
 
 /**
- * Interprets a Next.js `config.matcher` entry of the form `/<prefix>/:path*`
- * the same way Next does: matches the bare prefix and anything under it.
- * Only handles the shape this project's matcher actually uses — it is a
- * verification tool for THIS matcher, not a general path-to-regexp clone.
+ * Interprets a Next.js `config.matcher` entry the way Next does: each
+ * pattern is a path-to-regexp-flavoured string, and this project's matcher
+ * (as of the CSP nonce work) is the single catch-all-except-static-assets
+ * form `/((?!_next/static|_next/image|favicon.ico).*)`, which is already
+ * valid regex source once anchored. Kept general enough to also interpret
+ * the older `/<prefix>/:path*` shape, in case a future matcher reverts to it.
  */
 function matcherCoversPath(patterns: readonly string[], pathname: string): boolean {
   return patterns.some((pattern) => {
-    const prefix = pattern.replace(/\/:path\*$/, '')
-    return pathname === prefix || pathname.startsWith(`${prefix}/`)
+    if (pattern.endsWith('/:path*')) {
+      const prefix = pattern.replace(/\/:path\*$/, '')
+      return pathname === prefix || pathname.startsWith(`${prefix}/`)
+    }
+    return new RegExp(`^${pattern}$`).test(pathname)
   })
 }
 
 /**
- * `middleware.ts` decides which CSRF cookie to issue by calling
+ * `src/proxy.ts` decides which CSRF cookie to issue by calling
  * `matchesAdminCsrfRoute` / `matchesGuestCsrfRoute` directly (see its
- * comments) — but Next.js only ever *invokes* the middleware function for
- * requests matching `config.matcher`. A predicate saying a route needs a
- * cookie is worthless if `config.matcher` never lets middleware run on that
- * route in the first place.
+ * comments) — but Next.js only ever *invokes* the proxy for requests
+ * matching `config.matcher`. A predicate saying a route needs a cookie is
+ * worthless if `config.matcher` never lets the proxy run on that route in
+ * the first place.
  *
- * This is the test that used to be able to pass while every guest page 500'd:
- * `matchesCsrfRoute` was tested in isolation above, but nothing checked that
- * `config.matcher` actually agreed with it. This suite reads the real
- * `config` exported by `src/middleware.ts` — not a re-typed copy of it — so
- * shrinking the matcher fails right here.
+ * The matcher now also carries the per-request CSP nonce, so it is
+ * deliberately a SUPERSET of the CSRF predicates (it matches nearly every
+ * route, not just `/admin` and `/i`) rather than an exact match — this test
+ * asserts the superset relationship, not equality: every route the CSRF
+ * predicates require is confirmed still covered.
  */
-describe('middleware config.matcher agrees with the CSRF route predicates', () => {
+describe('proxy config.matcher covers every CSRF route', () => {
   const samplePaths = [
     '/admin',
     '/admin/invites',
@@ -91,7 +96,15 @@ describe('middleware config.matcher agrees with the CSRF route predicates', () =
     '/index',
   ]
 
-  it.each(samplePaths)('matcher coverage of %s matches matchesCsrfRoute', (pathname) => {
-    expect(matcherCoversPath(config.matcher, pathname)).toBe(matchesCsrfRoute(pathname))
+  it.each(samplePaths)('matcher covers %s whenever a CSRF cookie is needed there', (pathname) => {
+    if (matchesCsrfRoute(pathname)) {
+      expect(matcherCoversPath(config.matcher, pathname)).toBe(true)
+    }
+  })
+
+  it('excludes static asset paths so the proxy does not run on every chunk request', () => {
+    expect(matcherCoversPath(config.matcher, '/_next/static/chunk.js')).toBe(false)
+    expect(matcherCoversPath(config.matcher, '/_next/image')).toBe(false)
+    expect(matcherCoversPath(config.matcher, '/favicon.ico')).toBe(false)
   })
 })
