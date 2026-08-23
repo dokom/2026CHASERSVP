@@ -39,19 +39,19 @@ async function seed() {
 describe('dashboard', () => {
   it('counts invites by status', async () => {
     await seed()
-    const d = await dashboard(testDb, NOW)
+    const d = await dashboard(testDb)
     expect(d.invites).toEqual({ total: 5, responded: 4, attending: 2, declined: 1, partial: 1, pending: 1 })
   })
 
   it('counts people coming and arrived', async () => {
     await seed()
-    const d = await dashboard(testDb, NOW)
+    const d = await dashboard(testDb)
     expect(d.guests).toEqual({ attending: 4, checkedIn: 1 })
   })
 
   it('tallies meals INCLUDING retired options — a retired choice still eats', async () => {
     await seed()
-    const d = await dashboard(testDb, NOW)
+    const d = await dashboard(testDb)
     expect(d.meals).toEqual(expect.arrayContaining([
       { label: 'Beef', count: 2, isActive: true },
       { label: 'Fish', count: 1, isActive: false },
@@ -64,13 +64,13 @@ describe('dashboard', () => {
     const invite = await testDb.invite.findFirstOrThrow({ where: { label: 'C' } })
     const meal = await testDb.mealOption.findFirstOrThrow({ where: { label: 'Beef' } })
     await testDb.guest.updateMany({ where: { inviteId: invite.id }, data: { mealOptionId: meal.id } })
-    const d = await dashboard(testDb, NOW)
+    const d = await dashboard(testDb)
     expect(d.meals.find((m) => m.label === 'Beef')?.count).toBe(2)
   })
 
   it('buckets responses by UTC day in ascending order', async () => {
     await seed()
-    const d = await dashboard(testDb, NOW)
+    const d = await dashboard(testDb)
     expect(d.responsesByDay).toEqual([
       { date: '2026-09-01', count: 2 },
       { date: '2026-09-03', count: 1 },
@@ -80,11 +80,11 @@ describe('dashboard', () => {
 
   it('counts pending extra-seat requests', async () => {
     await seed()
-    expect((await dashboard(testDb, NOW)).pendingExtraSeats).toBe(1)
+    expect((await dashboard(testDb)).pendingExtraSeats).toBe(1)
   })
 
   it('is all zeros on an empty database rather than throwing', async () => {
-    const d = await dashboard(testDb, NOW)
+    const d = await dashboard(testDb)
     expect(d.invites.total).toBe(0)
     expect(d.meals).toEqual([])
     expect(d.responsesByDay).toEqual([])

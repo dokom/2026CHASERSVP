@@ -11,7 +11,7 @@ export type Dashboard = {
 
 const day = (d: Date) => d.toISOString().slice(0, 10)
 
-export async function dashboard(db: PrismaClient, _now: Date): Promise<Dashboard> {
+export async function dashboard(db: PrismaClient): Promise<Dashboard> {
   const [byStatus, guests, meals, mealCounts, responded, pendingExtraSeats] = await Promise.all([
     db.invite.groupBy({ by: ['status'], _count: { _all: true } }),
     checkInProgress(db),

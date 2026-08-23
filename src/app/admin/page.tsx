@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function AdminDashboard() {
   await requireRole('ADMIN')
-  const d = await dashboard(prisma, new Date())
+  const d = await dashboard(prisma)
   const rate = d.invites.total ? Math.round((d.invites.responded / d.invites.total) * 100) : 0
 
   return (
