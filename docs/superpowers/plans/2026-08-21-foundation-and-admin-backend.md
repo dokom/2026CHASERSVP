@@ -4,15 +4,20 @@
 
 **Goal:** Build the scaffold, database, admin authentication, admin user management, invite/guest management, CSV import, and QR code generation — a working backend that can manage a 1000-person guest list and produce print-ready QR invitations.
 
-**Architecture:** A single Next.js 15 App Router application in TypeScript. Business logic lives in plain, framework-free modules under `src/lib/` so it can be unit-tested without a server; route handlers and server actions are thin wrappers that validate input with Zod, call a lib function, and write an audit row. PostgreSQL via Prisma. Admin identity is a DB-backed session referenced by an httpOnly cookie; guest identity (built in Plan 2) is a hashed opaque token.
+**Architecture:** A single Next.js 16 App Router application in TypeScript. Business logic lives in plain, framework-free modules under `src/lib/` so it can be unit-tested without a server; route handlers and server actions are thin wrappers that validate input with Zod, call a lib function, and write an audit row. MongoDB via Prisma (mongodb connector). Admin identity is a DB-backed session referenced by an httpOnly cookie; guest identity (built in Plan 2) is a hashed opaque token.
 
-**Tech Stack:** Next.js 15, React 19, TypeScript 5, Tailwind CSS v4, PostgreSQL, Prisma 6, Zod 3, `@node-rs/argon2`, `papaparse`, `qrcode`, `jszip`, `pdf-lib`, Vitest 2, Playwright 1.
+**Tech Stack:** Next.js 16, React 19, TypeScript 5.9, Tailwind CSS v4, MongoDB 8, Prisma 6.19.3, Zod 3.25, `@node-rs/argon2`, `papaparse`, `qrcode`, `jszip`, `pdf-lib`, Vitest 4, Playwright 1.62.
 
 **Spec:** `docs/superpowers/specs/2026-08-21-gala-rsvp-portal-design.md`
 
 ## Global Constraints
 
-- Node.js >= 20.11. Package manager: `pnpm`.
+- Node.js >= 20.11. Package manager: `npm` (pnpm cannot be installed here - EPERM writing to C:\Program Files\nodejs).
+- Database is **MongoDB**, via Prisma's `mongodb` connector. Schema changes ship with
+  `npx prisma db push`; there are no migration files.
+- Dev and test run against a project-local single-node replica set on port 27018
+  (`npm run db:start`). The replica set is mandatory - Prisma uses transactions and MongoDB
+  requires a replica set for them. The machine's default standalone mongod on 27017 is untouched.
 - Every module under `src/lib/` must be importable in a plain Node test — no `next/*` imports, no React, no `server-only`.
 - All external input is validated with Zod at the boundary. No unvalidated `request.json()` reaches a lib function.
 - Roles are `OWNER` > `ADMIN` > `STAFF`. Every admin route checks role **server-side**. Client-side gating is presentation only.
@@ -22,6 +27,11 @@
 - Files stay under 400 lines. Functions stay under 50 lines.
 - Test coverage floor: 80%.
 - Secrets come from `src/lib/env.ts` only. No direct `process.env` access outside that file.
+- **Never call `cookies().set()` inside a Server Component render.** Next.js forbids it
+  unconditionally and the page 500s in production while every unit and integration test
+  stays green. Cookie writes belong in a Server Action, a Route Handler, or
+  `src/middleware.ts`. The CSRF cookie is bootstrapped by middleware for all `/admin/*`
+  routes; page components and `CsrfInput` only ever READ it.
 
 ---
 
@@ -82,7 +92,7 @@
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: `pnpm dev`, `pnpm build`, `pnpm test`, `pnpm test:e2e`, `pnpm lint`, `pnpm typecheck` scripts
+- Produces: `npm run dev`, `npm run build`, `npm test`, `npm run test:e2e`, `npm run lint`, `npm run typecheck` scripts
 
 - [ ] **Step 1: Create `package.json`**
 
@@ -91,7 +101,9 @@
   "name": "gala-rsvp-portal",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=20.11" },
+  "engines": {
+    "node": ">=20.11"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
@@ -102,39 +114,40 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:start": "mongod --replSet rs0 --port 27018 --bind_ip 127.0.0.1 --dbpath .mongo/data"
   },
   "dependencies": {
-    "@node-rs/argon2": "^2.0.2",
-    "@prisma/client": "^6.2.1",
+    "@node-rs/argon2": "^2.1.0",
+    "@prisma/client": "^6.19.3",
     "jszip": "^3.10.1",
-    "next": "^15.1.6",
+    "next": "^16.3.2",
     "papaparse": "^5.4.1",
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zod": "^3.24.1"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.0.0",
-    "@types/node": "^22.10.5",
+    "@types/node": "^26.2.0",
     "@types/papaparse": "^5.3.15",
     "@types/qrcode": "^1.5.5",
-    "@types/react": "^19.0.7",
-    "@types/react-dom": "^19.0.3",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitest/coverage-v8": "^4.1.11",
+    "dotenv": "^16.4.7",
     "eslint": "^9.18.0",
-    "eslint-config-next": "^15.1.6",
-    "prisma": "^6.2.1",
+    "eslint-config-next": "^16.3.2",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3",
-    "vitest": "^2.1.8"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   }
 }
 ```
@@ -211,11 +224,12 @@ export default defineConfig({
 - [ ] **Step 3: Create `.env.example`**
 
 ```bash
-# PostgreSQL connection string for the application
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/gala?schema=public"
+# MongoDB connection string. Must point at a REPLICA SET - Prisma uses transactions.
+# Start the local one with `npm run db:start`.
+DATABASE_URL="mongodb://127.0.0.1:27018/gala?replicaSet=rs0"
 
 # Separate database used by integration tests. MUST differ from DATABASE_URL.
-DATABASE_URL_TEST="postgresql://postgres:postgres@localhost:5432/gala_test?schema=public"
+DATABASE_URL_TEST="mongodb://127.0.0.1:27018/gala_test?replicaSet=rs0"
 
 # Public origin, used to build QR code URLs. No trailing slash.
 APP_URL="http://localhost:3000"
@@ -223,7 +237,7 @@ APP_URL="http://localhost:3000"
 # 32+ random bytes, base64. Generate: openssl rand -base64 32
 SESSION_SECRET="replace-me-with-32-plus-random-bytes"
 
-# Seeded on first `pnpm db:seed`. Change the password after first login.
+# Seeded on first `npm run db:seed`. Change the password after first login.
 ADMIN_SEED_EMAIL="owner@example.com"
 ADMIN_SEED_PASSWORD="change-me-immediately"
 ```
@@ -300,7 +314,7 @@ describe('test harness', () => {
 
 - [ ] **Step 6: Install and verify**
 
-Run: `pnpm install && pnpm test && pnpm typecheck`
+Run: `npm install && npm test && npm run typecheck`
 Expected: install succeeds, one test passes, zero type errors.
 
 - [ ] **Step 7: Commit**
@@ -331,8 +345,8 @@ import { describe, it, expect } from 'vitest'
 import { parseEnv } from '@/lib/env'
 
 const valid = {
-  DATABASE_URL: 'postgresql://u:p@localhost:5432/gala',
-  DATABASE_URL_TEST: 'postgresql://u:p@localhost:5432/gala_test',
+  DATABASE_URL: 'mongodb://127.0.0.1:27018/gala?replicaSet=rs0',
+  DATABASE_URL_TEST: 'mongodb://127.0.0.1:27018/gala_test?replicaSet=rs0',
   APP_URL: 'https://gala.example.com',
   SESSION_SECRET: 'a'.repeat(32),
   ADMIN_SEED_EMAIL: 'owner@example.com',
@@ -371,7 +385,7 @@ describe('parseEnv', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/env.test.ts`
+Run: `npx vitest run tests/unit/env.test.ts`
 Expected: FAIL — cannot resolve `@/lib/env`.
 
 - [ ] **Step 3: Implement `src/lib/env.ts`**
@@ -414,7 +428,7 @@ export function getEnv(): Env {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/env.test.ts`
+Run: `npx vitest run tests/unit/env.test.ts`
 Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
@@ -444,7 +458,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -469,7 +483,7 @@ enum ExtraSeatsStatus {
 }
 
 model AdminUser {
-  id                 String         @id @default(cuid())
+  id                 String         @id @default(auto()) @map("_id") @db.ObjectId
   email              String         @unique
   name               String
   passwordHash       String
@@ -485,9 +499,9 @@ model AdminUser {
 }
 
 model AdminSession {
-  id        String    @id @default(cuid())
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
   tokenHash String    @unique
-  userId    String
+  userId    String    @db.ObjectId
   user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   ip        String?
@@ -499,7 +513,7 @@ model AdminSession {
 }
 
 model LoginAttempt {
-  id        String   @id @default(cuid())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
   email     String
   succeeded Boolean
   ip        String?
@@ -509,7 +523,7 @@ model LoginAttempt {
 }
 
 model MediaAsset {
-  id        String   @id @default(cuid())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
   filename  String
   mimeType  String
   bytes     Bytes
@@ -520,28 +534,28 @@ model MediaAsset {
 }
 
 model Event {
-  id              String       @id @default(cuid())
-  name            String
-  tagline         String?
-  startsAt        DateTime
-  timezone        String       @default("UTC")
-  venueName       String
-  address         String
-  dressCode       String?
-  rsvpDeadline    DateTime
-  brandTokens     Json?
-  floorplanAssetId String?
-  floorplanAsset  MediaAsset?  @relation(fields: [floorplanAssetId], references: [id])
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  agendaItems     AgendaItem[]
-  mealOptions     MealOption[]
-  tableMarkers    TableMarker[]
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  tagline          String?
+  startsAt         DateTime
+  timezone         String        @default("UTC")
+  venueName        String
+  address          String
+  dressCode        String?
+  rsvpDeadline     DateTime
+  brandTokens      Json?
+  floorplanAssetId String?       @db.ObjectId
+  floorplanAsset   MediaAsset?   @relation(fields: [floorplanAssetId], references: [id])
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  agendaItems      AgendaItem[]
+  mealOptions      MealOption[]
+  tableMarkers     TableMarker[]
 }
 
 model AgendaItem {
-  id          String   @id @default(cuid())
-  eventId     String
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String   @db.ObjectId
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   startsAt    DateTime
   title       String
@@ -553,21 +567,21 @@ model AgendaItem {
 }
 
 model MealOption {
-  id          String   @id @default(cuid())
-  eventId     String
-  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String  @db.ObjectId
+  event       Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
   label       String
   description String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
   guests      Guest[]
 
   @@index([eventId, sortOrder])
 }
 
 model TableMarker {
-  id          String @id @default(cuid())
-  eventId     String
+  id          String @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String @db.ObjectId
   event       Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
   tableNumber String
   x           Float
@@ -577,7 +591,7 @@ model TableMarker {
 }
 
 model Invite {
-  id                  String           @id @default(cuid())
+  id                  String           @id @default(auto()) @map("_id") @db.ObjectId
   tokenHash           String           @unique
   tokenCipher         String
   label               String
@@ -595,11 +609,12 @@ model Invite {
 
   @@index([status])
   @@index([label])
+  @@index([createdAt])
 }
 
 model Guest {
-  id                 String      @id @default(cuid())
-  inviteId           String
+  id                 String      @id @default(auto()) @map("_id") @db.ObjectId
+  inviteId           String      @db.ObjectId
   invite             Invite      @relation(fields: [inviteId], references: [id], onDelete: Cascade)
   firstName          String
   lastName           String
@@ -610,24 +625,25 @@ model Guest {
   phone              String?
   isPrimary          Boolean     @default(false)
   attending          Boolean?
-  mealOptionId       String?
+  mealOptionId       String?     @db.ObjectId
   mealOption         MealOption? @relation(fields: [mealOptionId], references: [id])
   dietary            String[]    @default([])
   accessibilityNeeds String?
   tableNumber        String?
   checkedInAt        DateTime?
-  checkedInById      String?
+  checkedInById      String?     @db.ObjectId
   checkedInBy        AdminUser?  @relation("CheckedInBy", fields: [checkedInById], references: [id])
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
   @@index([inviteId])
   @@index([attending])
+  @@index([email])
 }
 
 model AuditLog {
-  id        String     @id @default(cuid())
-  actorId   String?
+  id        String     @id @default(auto()) @map("_id") @db.ObjectId
+  actorId   String?    @db.ObjectId
   actor     AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
   action    String
   entity    String
@@ -678,16 +694,18 @@ if (!url) throw new Error('DATABASE_URL_TEST is required to run integration test
 
 export const testDb = new PrismaClient({ datasources: { db: { url } } })
 
-const TABLES = [
-  'AuditLog', 'Guest', 'Invite', 'TableMarker', 'MealOption',
-  'AgendaItem', 'Event', 'MediaAsset', 'LoginAttempt',
-  'AdminSession', 'AdminUser',
-]
+/** Child collections first, so cascade emulation never races a parent delete. */
+const MODELS = [
+  'auditLog', 'guest', 'invite', 'tableMarker', 'mealOption',
+  'agendaItem', 'event', 'mediaAsset', 'loginAttempt',
+  'adminSession', 'adminUser',
+] as const
 
+// MongoDB has no TRUNCATE; deleteMany per collection is the equivalent.
 export async function resetDb(): Promise<void> {
-  await testDb.$executeRawUnsafe(
-    `TRUNCATE TABLE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`,
-  )
+  for (const model of MODELS) {
+    await (testDb[model] as { deleteMany: () => Promise<unknown> }).deleteMany()
+  }
 }
 ```
 
@@ -705,7 +723,7 @@ process.env.SESSION_SECRET ??= 'test-session-secret-at-least-32-chars'
 process.env.APP_URL ??= 'http://localhost:3000'
 ```
 
-Add `dotenv` to devDependencies: `pnpm add -D dotenv`.
+Add `dotenv` to devDependencies: `npm i -D dotenv`.
 
 - [ ] **Step 4: Write the schema integration test**
 
@@ -767,18 +785,25 @@ describe('schema', () => {
 - [ ] **Step 5: Create the databases and run the migration**
 
 ```bash
-createdb gala || true
-createdb gala_test || true
-cp .env.example .env   # then edit the credentials to match your Postgres
-pnpm prisma migrate dev --name init
-DATABASE_URL="$DATABASE_URL_TEST" pnpm prisma migrate deploy
+cp .env.example .env          # defaults already point at 127.0.0.1:27018
+
+# Start the project-local single-node replica set (leave it running).
+mkdir -p .mongo/data
+npm run db:start &
+
+# One-time: promote it to a replica set. Safe to re-run; errors if already initiated.
+npx -y mongosh@2 --quiet --port 27018 --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27018"}]})'
+
+# Push the schema to BOTH databases. MongoDB has no migration files.
+npx prisma db push
+DATABASE_URL="mongodb://127.0.0.1:27018/gala_test?replicaSet=rs0" npx prisma db push
 ```
 
-Expected: `prisma/migrations/<timestamp>_init/migration.sql` exists; both databases have the tables.
+Expected: `rs.status()` reports `PRIMARY`, and both databases report indexes in sync.
 
 - [ ] **Step 6: Run the integration test**
 
-Run: `pnpm vitest run tests/integration/schema.test.ts`
+Run: `npx vitest run tests/integration/schema.test.ts`
 Expected: PASS, 4 tests.
 
 - [ ] **Step 7: Commit**
@@ -846,7 +871,7 @@ describe('hashToken', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/tokens.test.ts`
+Run: `npx vitest run tests/unit/tokens.test.ts`
 Expected: FAIL — cannot resolve `@/lib/crypto/tokens`.
 
 - [ ] **Step 3: Implement `src/lib/crypto/tokens.ts`**
@@ -876,7 +901,7 @@ export function hashToken(token: string): string {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/tokens.test.ts`
+Run: `npx vitest run tests/unit/tokens.test.ts`
 Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
@@ -967,7 +992,7 @@ describe('secret box', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/secret-box.test.ts`
+Run: `npx vitest run tests/unit/secret-box.test.ts`
 Expected: FAIL — cannot resolve `@/lib/crypto/secret-box`.
 
 - [ ] **Step 3: Implement `src/lib/crypto/secret-box.ts`**
@@ -1037,7 +1062,7 @@ export function open(sealed: string, secret: string): string {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/secret-box.test.ts`
+Run: `npx vitest run tests/unit/secret-box.test.ts`
 Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit**
@@ -1110,7 +1135,7 @@ describe('password hashing', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/password.test.ts`
+Run: `npx vitest run tests/unit/password.test.ts`
 Expected: FAIL — cannot resolve `@/lib/crypto/password`.
 
 - [ ] **Step 3: Implement `src/lib/crypto/password.ts`**
@@ -1149,7 +1174,7 @@ export async function verifyPassword(storedHash: string, plain: string): Promise
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/password.test.ts`
+Run: `npx vitest run tests/unit/password.test.ts`
 Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Commit**
@@ -1218,7 +1243,7 @@ describe('landingPathFor', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/roles.test.ts`
+Run: `npx vitest run tests/unit/roles.test.ts`
 Expected: FAIL — cannot resolve `@/lib/auth/roles`.
 
 - [ ] **Step 3: Implement `src/lib/auth/roles.ts`**
@@ -1244,7 +1269,7 @@ export function landingPathFor(role: Role): string {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/roles.test.ts`
+Run: `npx vitest run tests/unit/roles.test.ts`
 Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
@@ -1357,7 +1382,7 @@ describe('sessions', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/session.test.ts`
+Run: `npx vitest run tests/integration/session.test.ts`
 Expected: FAIL — cannot resolve `@/lib/auth/session`.
 
 - [ ] **Step 3: Implement `src/lib/auth/session.ts`**
@@ -1443,7 +1468,7 @@ export async function purgeExpiredSessions(db: PrismaClient): Promise<number> {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/integration/session.test.ts`
+Run: `npx vitest run tests/integration/session.test.ts`
 Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Commit**
@@ -1535,7 +1560,7 @@ describe('login rate limiting', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/rate-limit.test.ts`
+Run: `npx vitest run tests/integration/rate-limit.test.ts`
 Expected: FAIL — cannot resolve `@/lib/auth/rate-limit`.
 
 - [ ] **Step 3: Implement `src/lib/auth/rate-limit.ts`**
@@ -1581,7 +1606,7 @@ export async function clearAttempts(db: PrismaClient, email: string): Promise<vo
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/integration/rate-limit.test.ts`
+Run: `npx vitest run tests/integration/rate-limit.test.ts`
 Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
@@ -1659,7 +1684,7 @@ describe('writeAudit', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/audit.test.ts`
+Run: `npx vitest run tests/integration/audit.test.ts`
 Expected: FAIL — cannot resolve `@/lib/audit`.
 
 - [ ] **Step 3: Implement `src/lib/audit.ts`**
@@ -1709,7 +1734,7 @@ export async function writeAudit(tx: AuditClient, entry: AuditEntry): Promise<vo
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/integration/audit.test.ts`
+Run: `npx vitest run tests/integration/audit.test.ts`
 Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Commit**
@@ -1784,7 +1809,7 @@ describe('deriveInviteStatus', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/invite-status.test.ts`
+Run: `npx vitest run tests/unit/invite-status.test.ts`
 Expected: FAIL — cannot resolve `@/lib/invites/status`.
 
 - [ ] **Step 3: Implement `src/lib/invites/status.ts`**
@@ -1824,7 +1849,7 @@ export function deriveInviteStatus(guests: GuestAttendance[]): InviteStatus {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/invite-status.test.ts`
+Run: `npx vitest run tests/unit/invite-status.test.ts`
 Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Commit**
@@ -1901,7 +1926,7 @@ describe('csrf', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/csrf.test.ts`
+Run: `npx vitest run tests/unit/csrf.test.ts`
 Expected: FAIL — cannot resolve `@/lib/auth/csrf`.
 
 - [ ] **Step 3: Implement `src/lib/auth/csrf.ts`**
@@ -1931,7 +1956,7 @@ export function verifyCsrfToken(cookieValue: string | undefined, formValue: unkn
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/csrf.test.ts`
+Run: `npx vitest run tests/unit/csrf.test.ts`
 Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Implement `src/lib/auth/guard.ts`**
@@ -1973,7 +1998,7 @@ export async function requireCsrf(formData: FormData): Promise<void> {
 
 - [ ] **Step 6: Verify it typechecks**
 
-Run: `pnpm typecheck`
+Run: `npm run typecheck`
 Expected: zero errors.
 
 - [ ] **Step 7: Commit**
@@ -2097,7 +2122,7 @@ describe('attemptLogin', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/login.test.ts`
+Run: `npx vitest run tests/integration/login.test.ts`
 Expected: FAIL — cannot resolve `@/lib/auth/login`.
 
 - [ ] **Step 3: Implement the validation schema and login logic**
@@ -2215,7 +2240,7 @@ export async function attemptLogin(
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/integration/login.test.ts`
+Run: `npx vitest run tests/integration/login.test.ts`
 Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Build the login page and its action**
@@ -2379,7 +2404,7 @@ Note: `login-form.tsx` is a fifth created file for this task; add it to the comm
 
 - [ ] **Step 6: Verify it typechecks and builds**
 
-Run: `pnpm typecheck && pnpm build`
+Run: `npm run typecheck && npm run build`
 Expected: zero errors.
 
 - [ ] **Step 7: Commit**
@@ -2428,7 +2453,7 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    command: 'pnpm build && pnpm start',
+    command: 'npm run build && npm start',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
@@ -2487,7 +2512,7 @@ test.describe('admin access control', () => {
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `pnpm test:e2e tests/e2e/admin-access.spec.ts`
+Run: `npm run test:e2e tests/e2e/admin-access.spec.ts`
 Expected: FAIL — `/admin` 404s.
 
 - [ ] **Step 4: Implement the shell**
@@ -2636,7 +2661,7 @@ Register it by adding one line inside `defineConfig` in `playwright.config.ts`:
 
 - [ ] **Step 6: Run the E2E test**
 
-Run: `pnpm test:e2e tests/e2e/admin-access.spec.ts`
+Run: `npm run test:e2e tests/e2e/admin-access.spec.ts`
 Expected: PASS, 5 tests × 2 projects.
 
 - [ ] **Step 7: Commit**
@@ -2819,7 +2844,7 @@ describe('admin user repository', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/admin-users.test.ts`
+Run: `npx vitest run tests/integration/admin-users.test.ts`
 Expected: FAIL — cannot resolve `@/lib/admin-users/repository`.
 
 - [ ] **Step 3: Implement `src/lib/admin-users/repository.ts`**
@@ -2981,7 +3006,7 @@ export async function resetAdminPassword(
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/integration/admin-users.test.ts`
+Run: `npx vitest run tests/integration/admin-users.test.ts`
 Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
@@ -3060,7 +3085,7 @@ test.describe('admin user management', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm test:e2e tests/e2e/admin-users.spec.ts`
+Run: `npm run test:e2e tests/e2e/admin-users.spec.ts`
 Expected: FAIL — `/admin/users` 404s.
 
 - [ ] **Step 3: Create the shared components**
@@ -3069,19 +3094,20 @@ Expected: FAIL — `/admin/users` 404s.
 
 ```tsx
 import { cookies } from 'next/headers'
-import { CSRF_COOKIE, issueCsrfToken } from '@/lib/auth/csrf'
+import { CSRF_COOKIE } from '@/lib/auth/csrf'
 
+/**
+ * Renders the CSRF field for a form. READ-ONLY by design: Next.js forbids
+ * `cookies().set()` during a Server Component render, and doing it anyway
+ * 500s the page in production while every unit and integration test stays
+ * green. `src/middleware.ts` guarantees the cookie exists on every
+ * `/admin/*` request before render, so this component only ever reads it.
+ */
 export async function CsrfInput() {
   const store = await cookies()
-  let token = store.get(CSRF_COOKIE)?.value
+  const token = store.get(CSRF_COOKIE)?.value
   if (!token) {
-    token = issueCsrfToken()
-    store.set(CSRF_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    })
+    throw new Error('CSRF cookie missing — check that src/middleware.ts matches this route')
   }
   return <input type="hidden" name="csrf" value={token} />
 }
@@ -3320,7 +3346,7 @@ export default async function AdminUsersPage({
 
 - [ ] **Step 6: Run the E2E test**
 
-Run: `pnpm test:e2e tests/e2e/admin-users.spec.ts`
+Run: `npm run test:e2e tests/e2e/admin-users.spec.ts`
 Expected: PASS, 3 tests × 2 projects.
 
 - [ ] **Step 7: Commit**
@@ -3566,7 +3592,7 @@ describe('invite repository', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/invites.test.ts`
+Run: `npx vitest run tests/integration/invites.test.ts`
 Expected: FAIL — cannot resolve `@/lib/invites/repository`.
 
 - [ ] **Step 3: Implement the validation schemas**
@@ -3768,8 +3794,18 @@ export type InviteDetail = InviteRow & {
   }[]
 }
 
+/**
+ * MongoDB ids are ObjectIds: `findUnique` on a malformed id THROWS rather than
+ * returning null. Ids arrive straight from URLs, so an unparseable one means
+ * "not found", not a 500.
+ */
+function isMalformedIdError(error: unknown): boolean {
+  return error instanceof Error && /malformed objectid/i.test(error.message)
+}
+
 export async function getInvite(db: PrismaClient, id: string): Promise<InviteDetail | null> {
-  const raw = await db.invite.findUnique({
+  const raw = await db.invite
+    .findUnique({
     where: { id },
     select: {
       ...ROW_SELECT,
@@ -3784,7 +3820,11 @@ export async function getInvite(db: PrismaClient, id: string): Promise<InviteDet
         orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
       },
     },
-  })
+    })
+    .catch((error: unknown) => {
+      if (isMalformedIdError(error)) return null
+      throw error
+    })
   if (!raw) return null
   const { _count, ...rest } = raw
   return { ...rest, guestCount: _count.guests } as InviteDetail
@@ -3911,7 +3951,12 @@ export async function listInviteTokens(
 }
 
 export async function getInviteToken(db: PrismaClient, id: string): Promise<string | null> {
-  const row = await db.invite.findUnique({ where: { id }, select: { tokenCipher: true } })
+  const row = await db.invite
+    .findUnique({ where: { id }, select: { tokenCipher: true } })
+    .catch((error: unknown) => {
+      if (isMalformedIdError(error)) return null
+      throw error
+    })
   if (!row) return null
   try {
     return open(row.tokenCipher, getEnv().SESSION_SECRET)
@@ -3935,7 +3980,7 @@ export async function recomputeInviteStatus(tx: AuditClient, inviteId: string): 
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/integration/invites.test.ts`
+Run: `npx vitest run tests/integration/invites.test.ts`
 Expected: PASS, 24 tests.
 
 - [ ] **Step 6: Commit**
@@ -4031,7 +4076,7 @@ test.describe('invite management', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm test:e2e tests/e2e/invites.spec.ts`
+Run: `npm run test:e2e tests/e2e/invites.spec.ts`
 Expected: FAIL — `/admin/invites` 404s.
 
 - [ ] **Step 3: Create the presentational components**
@@ -4449,7 +4494,7 @@ export default async function InviteDetailPage({
 
 - [ ] **Step 7: Run the E2E test**
 
-Run: `pnpm test:e2e tests/e2e/invites.spec.ts`
+Run: `npm run test:e2e tests/e2e/invites.spec.ts`
 Expected: PASS, 4 tests × 2 projects.
 
 - [ ] **Step 8: Commit**
@@ -4606,7 +4651,7 @@ describe('csvTemplate', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/csv.test.ts`
+Run: `npx vitest run tests/unit/csv.test.ts`
 Expected: FAIL — cannot resolve `@/lib/invites/csv`.
 
 - [ ] **Step 3: Implement `src/lib/invites/csv.ts`**
@@ -4745,7 +4790,7 @@ export function csvTemplate(): string {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/csv.test.ts`
+Run: `npx vitest run tests/unit/csv.test.ts`
 Expected: PASS, 18 tests.
 
 - [ ] **Step 5: Commit**
@@ -4830,8 +4875,10 @@ B,1,,Sam,Reyes,,,,`)
 
   it('rolls back entirely when any insert fails', async () => {
     const rows = rowsFrom(`${HEADER}\nA,1,,Ada,Okafor,,,,`)
-    // A label longer than the column allows forces a database error mid-transaction.
-    const bad = [...rows, { ...rows[0]!, label: 'x'.repeat(100_000) }]
+    // MongoDB has no column length limit, so an oversized string would NOT fail here.
+    // A wrongly-typed seat count makes Prisma reject the second insert mid-transaction,
+    // which is what this test needs in order to prove the first insert is rolled back.
+    const bad = [...rows, { ...rows[0]!, seatsAllotted: 'not-a-number' as unknown as number }]
     await expect(commitInviteImport(testDb, null, bad)).rejects.toThrow()
     expect(await testDb.invite.count()).toBe(0)
   })
@@ -4865,7 +4912,7 @@ B,1,,Sam,Reyes,,,,`)
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/csv-import.test.ts`
+Run: `npx vitest run tests/integration/csv-import.test.ts`
 Expected: FAIL — cannot resolve `@/lib/invites/import`.
 
 - [ ] **Step 3: Implement `src/lib/invites/import.ts`**
@@ -4967,7 +5014,7 @@ export async function commitInviteImport(
 
 - [ ] **Step 4: Run the integration test**
 
-Run: `pnpm vitest run tests/integration/csv-import.test.ts`
+Run: `npx vitest run tests/integration/csv-import.test.ts`
 Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Write the failing E2E test**
@@ -5176,23 +5223,18 @@ export function ImportForm({ csrf }: { csrf: string }) {
 ```tsx
 import { cookies } from 'next/headers'
 import { requireRole } from '@/lib/auth/guard'
-import { CSRF_COOKIE, issueCsrfToken } from '@/lib/auth/csrf'
+import { CSRF_COOKIE } from '@/lib/auth/csrf'
 import { CSV_COLUMNS, csvTemplate } from '@/lib/invites/csv'
 import { ImportForm } from './import-form'
 
 export default async function ImportPage() {
   await requireRole('ADMIN')
 
+  // Read-only: middleware guarantees the cookie. See CsrfInput in Task 15.
   const store = await cookies()
-  let csrf = store.get(CSRF_COOKIE)?.value
+  const csrf = store.get(CSRF_COOKIE)?.value
   if (!csrf) {
-    csrf = issueCsrfToken()
-    store.set(CSRF_COOKIE, csrf, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    })
+    throw new Error('CSRF cookie missing — check that src/middleware.ts matches this route')
   }
 
   return (
@@ -5219,7 +5261,7 @@ export default async function ImportPage() {
 
 - [ ] **Step 7: Run the E2E test**
 
-Run: `pnpm test:e2e tests/e2e/csv-import.spec.ts`
+Run: `npm run test:e2e tests/e2e/csv-import.spec.ts`
 Expected: PASS, 3 tests × 2 projects.
 
 - [ ] **Step 8: Commit**
@@ -5353,7 +5395,7 @@ describe('buildQrPdf', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/unit/qr.test.ts`
+Run: `npx vitest run tests/unit/qr.test.ts`
 Expected: FAIL — cannot resolve `@/lib/invites/qr`.
 
 - [ ] **Step 3: Implement `src/lib/invites/qr.ts`**
@@ -5472,7 +5514,7 @@ export async function buildQrPdf(items: QrItem[]): Promise<Buffer> {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/unit/qr.test.ts`
+Run: `npx vitest run tests/unit/qr.test.ts`
 Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Commit**
@@ -5542,7 +5584,7 @@ test.describe('QR download', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm test:e2e tests/e2e/qr-download.spec.ts`
+Run: `npm run test:e2e tests/e2e/qr-download.spec.ts`
 Expected: FAIL — the route 404s.
 
 - [ ] **Step 3: Implement `src/app/api/admin/qr/route.ts`**
@@ -5601,7 +5643,7 @@ export async function GET(request: Request): Promise<Response> {
 
 - [ ] **Step 4: Run the E2E test**
 
-Run: `pnpm test:e2e tests/e2e/qr-download.spec.ts`
+Run: `npm run test:e2e tests/e2e/qr-download.spec.ts`
 Expected: PASS, 4 tests × 2 projects.
 
 - [ ] **Step 5: Commit**
@@ -5697,7 +5739,7 @@ describe('seed', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run tests/integration/seed.test.ts`
+Run: `npx vitest run tests/integration/seed.test.ts`
 Expected: FAIL — cannot resolve `../../prisma/seed`.
 
 - [ ] **Step 3: Implement `prisma/seed.ts`**
@@ -5797,12 +5839,12 @@ if (process.argv[1]?.includes('seed')) {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run tests/integration/seed.test.ts`
+Run: `npx vitest run tests/integration/seed.test.ts`
 Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Seed the development database**
 
-Run: `pnpm db:seed`
+Run: `npm run db:seed`
 Expected: `Seed complete: { ownerCreated: true, eventCreated: true, invitesCreated: 3 }`.
 Sign in at `/admin/login` with `ADMIN_SEED_EMAIL` and `ADMIN_SEED_PASSWORD`.
 
@@ -5822,12 +5864,12 @@ git commit -m "feat: idempotent database seed"
 - Modify: `.gitignore`
 
 **Interfaces:**
-- Consumes: every `pnpm` script from Task 1
+- Consumes: every `npm` script from Task 1
 - Produces: a CI workflow that fails on lint errors, type errors, test failures, coverage below 80%, or a broken build.
 
 - [ ] **Step 1: Confirm the coverage gate fails when it should**
 
-Run: `pnpm test:coverage`
+Run: `npm run test:coverage`
 Expected: PASS with all four thresholds (lines, functions, branches, statements) at or above 80%. If any is below, add the missing tests before continuing — do not lower the threshold.
 
 - [ ] **Step 2: Write the workflow**
@@ -5847,22 +5889,20 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: gala
-        ports: ['5432:5432']
+      mongo:
+        image: mongo:8
+        ports: ['27018:27017']
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
+        env:
+          MONGO_INITDB_DATABASE: gala
 
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gala?schema=public
-      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/gala_test?schema=public
+      DATABASE_URL: mongodb://127.0.0.1:27018/gala?replicaSet=rs0&directConnection=true
+      DATABASE_URL_TEST: mongodb://127.0.0.1:27018/gala_test?replicaSet=rs0&directConnection=true
       APP_URL: http://localhost:3000
       SESSION_SECRET: ci-session-secret-at-least-32-characters
       ADMIN_SEED_EMAIL: owner@example.com
@@ -5871,33 +5911,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
+      - uses: uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+          cache: npm
 
-      - run: pnpm install --frozen-lockfile
+      - run: npm ci
 
-      - name: Create the test database
-        run: PGPASSWORD=postgres createdb -h localhost -U postgres gala_test
-
-      - name: Apply migrations
+      - name: Promote MongoDB to a single-node replica set
         run: |
-          pnpm prisma migrate deploy
-          DATABASE_URL="$DATABASE_URL_TEST" pnpm prisma migrate deploy
+          npx -y mongosh@2 --quiet --port 27018 --eval             'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27018"}]})' || true
+          npx -y mongosh@2 --quiet --port 27018 --eval             'for(let i=0;i<30;i++){if(rs.status().myState===1){quit(0)};sleep(1000)};quit(1)'
 
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm test:coverage
+      - name: Push the schema to both databases
+        run: |
+          npx prisma db push
+          DATABASE_URL="$DATABASE_URL_TEST" npx prisma db push
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:coverage
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
-      - run: pnpm test:e2e
+      - run: npm run test:e2e
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -5920,19 +5958,20 @@ guest-list management, QR generation, and door check-in.
 ## Requirements
 
 - Node.js 20.11 or later
-- pnpm 9
-- PostgreSQL 14 or later
+- npm 10
+- MongoDB 8 (Community is fine) - the repo starts its own replica set on port 27018
 
 ## Setup
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env        # then fill in DATABASE_URL and SESSION_SECRET
-createdb gala && createdb gala_test
-pnpm prisma migrate deploy
-DATABASE_URL="$DATABASE_URL_TEST" pnpm prisma migrate deploy
-pnpm db:seed
-pnpm dev
+mkdir -p .mongo/data && npm run db:start &     # local replica set on 27018
+npx -y mongosh@2 --quiet --port 27018 --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27018"}]})'
+npx prisma db push
+DATABASE_URL="mongodb://127.0.0.1:27018/gala_test?replicaSet=rs0" npx prisma db push
+npm run db:seed
+npm run dev
 ```
 
 Sign in at http://localhost:3000/admin/login using `ADMIN_SEED_EMAIL` and
@@ -5942,12 +5981,14 @@ Sign in at http://localhost:3000/admin/login using `ADMIN_SEED_EMAIL` and
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm dev` | Development server |
-| `pnpm test` | Unit and integration tests |
-| `pnpm test:coverage` | Tests with the 80% coverage gate |
-| `pnpm test:e2e` | Playwright end-to-end tests |
-| `pnpm typecheck` | TypeScript, no emit |
-| `pnpm db:seed` | Idempotent seed |
+| `npm run dev` | Development server |
+| `npm test` | Unit and integration tests |
+| `npm run test:coverage` | Tests with the 80% coverage gate |
+| `npm run test:e2e` | Playwright end-to-end tests |
+| `npm run typecheck` | TypeScript, no emit |
+| `npm run db:start` | Local MongoDB replica set on port 27018 |
+| `npm run db:push` | Sync the Prisma schema to MongoDB |
+| `npm run db:seed` | Idempotent seed |
 
 ## Environment
 
@@ -5965,7 +6006,7 @@ regenerate tokens to reprint a sheet.
 
 - [ ] **Step 4: Verify the whole suite locally**
 
-Run: `pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e`
+Run: `npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e`
 Expected: all green.
 
 - [ ] **Step 5: Commit**
@@ -5977,11 +6018,44 @@ git commit -m "ci: verification pipeline with coverage gate"
 
 ---
 
+---
+
+## AS-BUILT DIVERGENCES — read before re-running any task from this plan
+
+The code in this plan is the code that was *dispatched*. Several modules changed after
+review found defects, and **the working tree is now the source of truth, not this document**.
+Re-running a task below from the plan text would faithfully reintroduce a fixed bug.
+
+| Module | Plan text is stale because | Read instead |
+| --- | --- | --- |
+| `src/lib/invites/csv.ts` (Task 18) | Row numbers counted post-filter array index, so a blank line shifted every later row number. An import error report pointed the operator at the wrong spreadsheet row. | the file |
+| `src/lib/audit.ts` (Task 9) | `redact()` was depth-1 only, so `meta.after.token` wrote a live invite token to the audit table. Also unbounded, so an oversized meta could throw inside the caller's transaction and roll back the mutation it was recording. Now recurses with depth/node caps, cycle protection, size caps, and returns a JSON-safe type by construction. | the file |
+| `src/lib/crypto/secret-box.ts` (Task 4a) | `open()` accepted truncated GCM auth tags — Node permits 4-byte tags by default, cutting forgery to ~2^32 work. Now requires exactly 16 bytes, checked before decrypting. | the file |
+| `src/lib/crypto/password.ts` (Task 5) | No maximum length (argon2 DoS on the login route), silent catch, and an ambient-const-enum import that `isolatedModules` rejects. | the file |
+| `src/lib/auth/csrf.ts` (Task 11) | Rewritten twice: Web Crypto for the Edge runtime, then a hand-rolled constant-time compare to drop `node:crypto` entirely. A top-level `node:crypto` import 500s every `/admin` request. | the file |
+| `src/lib/auth/session.ts` (Task 7) | `destroySession` swallowed delete errors, so logout could report success while the session stayed valid for 12h. | the file |
+| `src/lib/admin-users/repository.ts` (Task 14) | The last-owner guard was a READ inside the transaction. MongoDB only detects write conflicts on documents both transactions WRITE, so two concurrent demotions of different owners both committed, leaving zero owners. Now a WRITE, with a documented single retry. | the file |
+| `CsrfInput`, `login/page.tsx`, import page (Tasks 12/15/19) | All called `cookies().set()` during a Server Component render, which Next.js forbids — a production 500 invisible to every unit and integration test. `src/middleware.ts` now bootstraps the cookie once for all `/admin/*`. | the files |
+
+### Defects this plan contained, for whoever writes Plan 2
+
+Five were found by implementers or reviewers, none by my own spec self-review. Every one was
+an inconsistency **between two parts of the plan**, not a mismatch against the spec:
+
+1. CSV row numbering — implementation vs. its own stated requirement
+2. The rollback test — its failure trigger vs. the database it runs on (MongoDB has no column length limit, so the oversized-string trigger would never fire and the test would silently stop testing rollback)
+3. A search fixture — the fixture vs. the assertion it was meant to prove
+4. `cookies().set()` — code vs. the runtime it executes in, in four separate places
+5. `resetPasswordAction` — declared in the interfaces block, never wired into the page
+
+The self-review checked each section against the spec. It never checked sections against each
+other. That is where all five lived.
+
 ## Definition of done
 
 Plan 1 is complete when all of the following are true:
 
-- [ ] `pnpm typecheck`, `pnpm lint`, `pnpm test:coverage`, and `pnpm test:e2e` all pass locally and in CI
+- [ ] `npm run typecheck`, `npm run lint`, `npm run test:coverage`, and `npm run test:e2e` all pass locally and in CI
 - [ ] Coverage is at or above 80% on lines, functions, branches, and statements
 - [ ] An OWNER can sign in, create an ADMIN and a STAFF user, and cannot demote or deactivate the last OWNER
 - [ ] A STAFF user signing in lands on `/admin/checkin` and is redirected away from `/admin`, `/admin/invites`, and `/admin/users`

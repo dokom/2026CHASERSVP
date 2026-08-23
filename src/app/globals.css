@@ -1,0 +1,205 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ tokens */
+:root {
+  /* Literal palette. These never change with theme — they are colours, not
+     roles. --brass is a FILL colour (buttons, progress, marker, dots, focus
+     ring) and stays this exact hex in both schemes by design. */
+  --ink:       #0B0F1F;
+  --midnight:  #141A33;
+  --brass:     #C9A24D;
+  --brass-dim: #8C6F2F;
+  --bone:      #EFE9DC;
+  --mist:      #8B90A6;
+  --danger:    #D9604F;
+  --success:   #7FB98F;
+  /* Label colour on a brass FILL. Brass is dark-ish in both schemes, so the
+     label is always this near-black — never scheme-dependent. */
+  --on-brass:  #0B0F1F;
+
+  /* Semantic roles. These DO change with theme; redefined below per scheme.
+     Defaults here are the dark (ground) state. */
+  --ground:     var(--ink);
+  --surface:    var(--midnight);
+  --text:       var(--bone);
+  --text-muted: var(--mist);
+  /* Brass as TEXT (the guest's name, "Table N"). Brass-the-fill is ~1.9:1 on
+     the light ground, so text uses a darker brass instead of the fill hex. */
+  --brass-ink:  var(--brass);
+  /* Same reasoning as --brass-ink: --danger/--success as TEXT (status pill
+     labels) is only ~3.19:1 / ~1.98:1 on the light ground — below the 4.5:1
+     WCAG AA floor — so text uses darker ink variants; borders keep the
+     literal fill colour, since non-text UI contrast has a lower 3:1 floor
+     that the fill hues already clear. */
+  --danger-ink: var(--danger);
+  --success-ink: var(--success);
+
+  /* Type scale. Display sizes are fluid; the hero is deliberately enormous. */
+  --text-hero:    clamp(4.75rem, 2rem + 11vw, 9.5rem);
+  --text-display: clamp(2rem, 1.4rem + 3.5vw, 4rem);
+  --text-title:   clamp(1.375rem, 1.15rem + 1.2vw, 2rem);
+  --text-body:    clamp(1rem, 0.95rem + 0.3vw, 1.125rem);
+  --text-eyebrow: 0.6875rem;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Aliases the admin screens already reference. Point at the semantic roles
+     (not the literal colours) so admin surfaces track the active scheme. */
+  --color-ink: var(--surface);
+  --color-ink-deep: var(--on-brass);
+  --color-bone: var(--text);
+  --color-brass: var(--brass);
+  --color-brass-dim: var(--brass-dim);
+  --color-surface: var(--surface);
+  --color-border: #2A3150;
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+}
+
+/* Light theme is a designed theme, not an inversion: warm bone ground, same
+   brass fills. Only the semantic roles move — the literal colours above
+   never do, so their names never mean their opposite. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground:     #F4EFE4;
+    --surface:    #FFFFFF;
+    --text:       #161A2B;
+    --text-muted: #5B6078;
+    /* ~5.54:1 against #F4EFE4 — verified, exceeds the 4.5:1 floor. */
+    --brass-ink:  #7A5A12;
+    /* ~5.18:1 against #F4EFE4 / ~5.94:1 against #FFFFFF — verified. */
+    --danger-ink: #B23A2E;
+    /* ~6.01:1 against #F4EFE4 / ~6.89:1 against #FFFFFF — verified. */
+    --success-ink: #276639;
+    --color-border: #D9D2C2;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:     var(--ink);
+  --surface:    var(--midnight);
+  --text:       var(--bone);
+  --text-muted: var(--mist);
+  --brass-ink:  var(--brass);
+  --danger-ink: var(--danger);
+  --success-ink: var(--success);
+  --color-border: #2A3150;
+}
+/* Mirrors the `prefers-color-scheme: light` block above exactly. Needed
+   because MotionProvider honours an explicit data-theme="light" choice even
+   when the OS itself prefers dark — without this block, that visitor's
+   media query never matches (`prefers-color-scheme: light` is false), so
+   they would silently fall through to the dark :root defaults, right where
+   the foil flecks are colour-blended for a light ground. Same source-order
+   placement as [data-theme="dark"] above so the explicit attribute always
+   wins over the media query. */
+:root[data-theme="light"] {
+  --ground:     #F4EFE4;
+  --surface:    #FFFFFF;
+  --text:       #161A2B;
+  --text-muted: #5B6078;
+  --brass-ink:  #7A5A12;
+  --danger-ink: #B23A2E;
+  --success-ink: #276639;
+  --color-border: #D9D2C2;
+}
+
+/* ------------------------------------------------------------------- base */
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: var(--text-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* opsz is size-specific, not a blanket 72: forcing display-weight hairlines
+   onto 20px body serif is exactly the shimmer opsz exists to prevent. Only
+   .type-hero earns the full 72; .font-serif's own default is a body-safe 24. */
+.font-serif,
+.type-display {
+  font-family: var(--font-display), "Bodoni Moda", Didot, "Times New Roman", serif;
+  letter-spacing: -0.01em;
+  line-height: 1.02;
+}
+
+.font-serif   { font-variation-settings: "opsz" 24; }
+.type-hero    { font-size: var(--text-hero); font-variation-settings: "opsz" 72; }
+.type-display { font-size: var(--text-display); font-variation-settings: "opsz" 48; }
+.type-title   { font-size: var(--text-title); font-variation-settings: "opsz" 24; }
+
+/* Engraved-caption eyebrows: small caps, wide tracking. --text-muted (not the
+   literal --mist) so eyebrows stay legible when the scheme flips. */
+.type-eyebrow {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: var(--text-eyebrow);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.22em;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------- reduced motion */
+/* Baseline: the motion layer checks this itself via MotionProvider, but a CSS
+   backstop means nothing moves even if a script fails to load. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Ambient pulse on the guest's own table (Task 8). CSS, not a timeline: it
+   loops, and the reduced-motion backstop above already stops it. A scaling,
+   fading ring on ::after — transform + opacity only, compositor-only. The
+   marker itself (h-4 w-4, already `position: absolute`) is the containing
+   block, so `inset: 0` sizes the ring to it with no extra markup. */
+@keyframes seat-pulse-ring {
+  0%   { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(3.5); opacity: 0; }
+}
+.seat-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--brass);
+  animation: seat-pulse-ring 2.4s ease-out infinite;
+  pointer-events: none;
+}
+
+/* One-shot brass shimmer after the stamp lands (Task 10). The base text stays
+   fully readable throughout; a translucent brass highlight — duplicated text
+   via attr(), clipped to its own glyphs — sweeps across on ::after using only
+   transform + opacity. `data-shimmer-text` is set by rsvp-form.tsx to the
+   exact confirmation copy so the clip lines up with the real text. */
+@keyframes sealed-shimmer {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+.sealed-shimmer [data-testid="rsvp-confirmed"] {
+  position: relative;
+}
+.sealed-shimmer [data-testid="rsvp-confirmed"]::after {
+  content: attr(data-shimmer-text);
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  background: linear-gradient(100deg, transparent 40%, var(--brass) 50%, transparent 60%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sealed-shimmer 1.4s var(--ease-out-expo) 1 forwards;
+  pointer-events: none;
+}
+
+/* Visible keyboard focus everywhere, in brass. */
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+}

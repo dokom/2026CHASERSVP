@@ -54,10 +54,10 @@ QR codes, watch responses arrive, and check people in at the door.
 
 | Concern | Choice | Rationale |
 | --- | --- | --- |
-| Framework | Next.js 15, App Router, TypeScript | One repo, one deploy; shared types and validation between guest portal and admin |
+| Framework | Next.js 16, App Router, TypeScript | One repo, one deploy; shared types and validation between guest portal and admin |
 | Styling | Tailwind CSS v4 + CSS custom property design tokens | Tokens live in one file; no hardcoded palette values in components |
-| Database | PostgreSQL | Relational data (invites → guests → meals → tables) with real constraints |
-| ORM | Prisma | Typed queries, migrations, matches the Next.js/TS toolchain |
+| Database | MongoDB 8, replica set | Already installed on the target machine. Replica set is mandatory: Prisma uses transactions. Verified to support the transactional, cascade, and case-insensitive-search behaviour this design needs. |
+| ORM | Prisma 6.19.3 | Typed queries via the `mongodb` connector. Pinned to 6.x: Prisma 7 ships no MongoDB driver adapter. |
 | Motion | Anime.js v4 | ~40kb, timeline-based, scrubable via `seek()` for scroll-driven playback |
 | 3D | Three.js (lazy, hero only) | Single instanced-points scene; dynamically imported, tier-gated |
 | Validation | Zod | One schema per boundary, shared client/server |
@@ -73,8 +73,14 @@ QR codes, watch responses arrive, and check people in at the door.
   CORS. The render-loop control it buys is not control Next.js removes.
 - *Static site + serverless functions* — CSV import, live dashboards, image upload and a
   check-in scanner constitute a real application; this approach fights back within a week.
-- *Supabase* — viable, but adds a second vendor for auth and storage that this design
-  does not otherwise need. Postgres alone is sufficient.
+- *PostgreSQL* — the original choice, and a better structural fit for relational data.
+  Dropped because MongoDB Community is already installed on the target machine while
+  Postgres is not, and installing Postgres needs administrator rights that are unavailable.
+  A spike confirmed MongoDB handles every access pattern this design uses: interactive
+  transactions with rollback, cascade deletes, `mode: "insensitive"` search across
+  relations, scalar string lists, and `SetNull` on audit actors.
+- *Supabase / Neon* — viable hosted Postgres, but both require account signup and a
+  network dependency that the local MongoDB removes.
 
 ---
 
@@ -148,6 +154,8 @@ admin route are closed to them.
 ## 8. Data model
 
 ```
+// All ids are MongoDB ObjectIds, mapped to `_id` by Prisma.
+
 AdminUser
   id, email (unique), name, passwordHash, role (OWNER|ADMIN|STAFF),
   isActive, lastLoginAt, mustChangePassword, createdAt, updatedAt
@@ -197,10 +205,18 @@ AuditLog
   tables. Resolution: `guest.tableNumber ?? invite.tableNumber`.
 - `TableMarker` coordinates are normalized 0–1 against the floorplan image, so the marker
   stays correct at every render size.
-- The floorplan lives in Postgres as `bytea` and is served through a cached route handler.
+- The floorplan lives in MongoDB as `Bytes` and is served through a cached route handler.
   At one image of a few hundred KB, this trades negligible performance for one fewer
   vendor and one fewer environment variable.
 - `AuditLog.actorId` is nullable to record system-originated actions.
+- `Invite.tokenCipher` stores the invite token encrypted with AES-256-GCM under a key
+  derived from `SESSION_SECRET`. `tokenHash` serves lookup; `tokenCipher` exists so QR
+  sheets can be re-exported in bulk without rotating every token. A database leak alone
+  yields nothing usable - the secret lives outside the database.
+- Referential actions (`Cascade`, `SetNull`) are enforced by Prisma's client-side
+  emulation rather than by the database, because MongoDB has no foreign keys. Verified
+  working; the practical consequence is that direct database writes bypassing Prisma
+  would not cascade.
 
 ### 8.1 Invite status derivation
 
@@ -320,7 +336,7 @@ Mobile-first, designed for a dim venue and a staff member holding a phone one-ha
 
 - All input validated with Zod at every boundary — route handlers, server actions, CSV
   rows, and file uploads.
-- Parameterized queries throughout via Prisma. No raw SQL string interpolation.
+- All queries go through Prisma. No raw query string interpolation, no `$queryRawUnsafe`.
 - No `dangerouslySetInnerHTML` anywhere in the guest portal. Guest-supplied text
   (dietary notes, accessibility needs, extra-seat reasons) renders as text nodes only.
 - File upload restricted to `image/png`, `image/jpeg`, `image/webp`; magic-byte verified,
@@ -330,7 +346,7 @@ Mobile-first, designed for a dim venue and a staff member holding a phone one-ha
   `Permissions-Policy: camera=(self), microphone=(), geolocation=()`.
 - CSP with per-request nonce for scripts. Camera access is same-origin only.
 - Guest portal pages carry `noindex, nofollow`.
-- No secrets in client bundles. `DATABASE_URL`, `SESSION_SECRET`, and `ADMIN_SEED_*` are
+- No secrets in client bundles. `DATABASE_URL` (a MongoDB replica-set URI), `SESSION_SECRET`, and `ADMIN_SEED_*` are
   server-only and asserted present at startup — the app refuses to boot without them.
 - Tokens are never written to logs or error messages.
 - Every admin mutation writes an `AuditLog` row within the same transaction.
@@ -343,7 +359,7 @@ Mobile-first, designed for a dim venue and a staff member holding a phone one-ha
 seat-allowance enforcement; invite status derivation; meal and headcount aggregation;
 device-tier classification; `.ics` generation.
 
-**Integration (Vitest against a test Postgres)** — route handlers and server actions
+**Integration (Vitest against a test MongoDB database)** — route handlers and server actions
 end-to-end through the database: RSVP submission transaction, CSV commit atomicity, role
 enforcement on every protected route, session lifecycle, check-in idempotency.
 
@@ -386,7 +402,7 @@ beautiful. Phases 5–8 make it operable.
 | Three.js hero janks on older Android | Isolated behind the device-tier gate and a dynamic import; removable without touching any other module |
 | QR link forwarded to an unintended recipient | Per-invite scope limits blast radius; tokens regeneratable; deadline closes the write window |
 | Venue wifi fails during check-in | IndexedDB queue with optimistic UI and deferred sync |
-| Floorplan in Postgres grows unwieldy | Acceptable at one image; if it becomes several, `MediaAsset` is already an indirection layer and can be repointed at object storage without schema change elsewhere |
+| Floorplan in MongoDB grows unwieldy | Acceptable at one image; if it becomes several, `MediaAsset` is already an indirection layer and can be repointed at object storage without schema change elsewhere |
 | Scroll-driven motion conflicts with mobile browser chrome resize | Scroll progress computed against a fixed container height, not `100vh` |
 
 ## 15. Future work (explicitly out of scope)
