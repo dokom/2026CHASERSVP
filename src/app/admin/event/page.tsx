@@ -26,14 +26,14 @@ export default async function EventPage({
   const { error } = await searchParams
   const event = await getEvent(prisma)
 
-  // src/middleware.ts guarantees the CSRF cookie exists for every /admin
+  // src/proxy.ts guarantees the CSRF cookie exists for every /admin
   // request before this Server Component renders, so this is a plain read.
   // Next.js forbids cookies().set() during render — writing here would 500
   // the page in production while every unit/integration test stays green.
   const store = await cookies()
   const csrf = store.get(CSRF_COOKIE)?.value
   if (!csrf) {
-    throw new Error('CSRF cookie missing — check that src/middleware.ts matches this route')
+    throw new Error('CSRF cookie missing — check that src/proxy.ts matches this route')
   }
 
   return (

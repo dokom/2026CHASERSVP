@@ -51,6 +51,23 @@ function guestRow(page: Page, firstName: string) {
   return page.getByRole('button', { name: new RegExp(firstName) })
 }
 
+/** Reads the raw offline queue straight out of IndexedDB, bypassing React state entirely. */
+async function readPersistedQueue(page: Page): Promise<{ guestId: string }[]> {
+  return page.evaluate(async () => {
+    const req = indexedDB.open('gala-checkin', 1)
+    const db: IDBDatabase = await new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+    const value = await new Promise((resolve, reject) => {
+      const r = db.transaction('queue', 'readonly').objectStore('queue').get('pending')
+      r.onsuccess = () => resolve(r.result)
+      r.onerror = () => reject(r.error)
+    })
+    return (value ?? []) as { guestId: string }[]
+  })
+}
+
 test.describe('door check-in', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     desktopOnly(testInfo)
@@ -71,6 +88,19 @@ test.describe('door check-in', () => {
   })
 
   test('tap checks a guest in, undo reverts it, tapping again re-checks it', async ({ page }) => {
+    // I6's positive-state-first assertion is only observable if the write
+    // it is waiting on takes long enough to observe: a check-in POST round
+    // trip to localhost can complete well inside a single assertion poll,
+    // which would make "1 to sync" flicker in and out before Playwright
+    // ever samples it — a flake, not a false pass, but one that defeats
+    // the point of asserting the positive state at all. Delaying only this
+    // endpoint's response by a fixed, small amount makes the transient
+    // state deterministically observable without changing what happens.
+    await page.route('**/api/admin/checkin/guests/**', async (route) => {
+      if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, 400))
+      await route.continue()
+    })
+
     const before = await readProgress(page)
 
     const party = await resolveParty(page)
@@ -78,10 +108,15 @@ test.describe('door check-in', () => {
     if (!morgan) throw new Error('seed fixture missing Morgan')
     expect(morgan.checkedInAt).toBeNull()
 
-    // Tap #1: check in. Wait for the offline queue to flush (the unsynced
-    // badge disappears) so the row reflects the server-confirmed state,
-    // not just the optimistic one.
+    // Tap #1: check in. Assert the badge actually EXISTS first (I6: a bare
+    // toHaveCount(0) fires the instant the assertion starts polling, which
+    // is true both before the tap ever queues anything and after it
+    // syncs — it proves nothing about a sync having happened at all).
+    // Only once "1 to sync" has been observed do we wait for the badge to
+    // clear, which is the real proof the queued write flushed to the
+    // server rather than merely never having existed.
     await guestRow(page, 'Morgan').click()
+    await expect(page.getByTestId('unsynced-count')).toContainText('1 to sync')
     await expect(page.getByTestId('unsynced-count')).toHaveCount(0)
     await expect(guestRow(page, 'Morgan')).toContainText('tap to undo')
 
@@ -101,8 +136,9 @@ test.describe('door check-in', () => {
     await guestRow(page, 'Morgan').click()
     await expect(guestRow(page, 'Morgan')).toContainText('Tap to check in')
 
-    // Tap #3: re-check.
+    // Tap #3: re-check. Same I6 fix — positive state before the transition.
     await guestRow(page, 'Morgan').click()
+    await expect(page.getByTestId('unsynced-count')).toContainText('1 to sync')
     await expect(page.getByTestId('unsynced-count')).toHaveCount(0)
     await expect(guestRow(page, 'Morgan')).toContainText('tap to undo')
 
@@ -131,29 +167,44 @@ test.describe('door check-in', () => {
     await expect(guestRow(page, 'Casey')).toContainText('will sync')
     await expect(page.getByTestId('unsynced-count')).toContainText('1 to sync')
 
-    // A full navigation cannot succeed while the context is offline (no
-    // service worker caches the shell here), so "reload while offline" is
-    // proven the way that is actually true of this app: the queue lives
-    // in IndexedDB, not React state, and IndexedDB never touches the
-    // network — setOffline cannot affect it. Reading it back directly
-    // shows the entry survived independent of any in-memory component
-    // state, which is the property the offline queue exists to guarantee.
-    const survived = await page.evaluate(async () => {
-      const req = indexedDB.open('gala-checkin', 1)
-      const db: IDBDatabase = await new Promise((resolve, reject) => {
-        req.onsuccess = () => resolve(req.result)
-        req.onerror = () => reject(req.error)
-      })
-      const value = await new Promise((resolve, reject) => {
-        const r = db.transaction('queue', 'readonly').objectStore('queue').get('pending')
-        r.onsuccess = () => resolve(r.result)
-        r.onerror = () => reject(r.error)
-      })
-      return value as { guestId: string }[]
-    })
-    expect(survived.some((item) => item.guestId === casey.id)).toBe(true)
-    await expect(page.getByTestId('unsynced-count')).toContainText('1 to sync')
+    // I5: the previous version of this test read IndexedDB in the same
+    // page context and only reloaded AFTER the queue had already synced
+    // and emptied — a page.reload() that changes nothing observable,
+    // since deleting scanner.tsx's load-on-mount effect (`loadQueue().
+    // then(setQueue)`) would still leave every assertion here green. To
+    // actually exercise that effect, the reload below happens while the
+    // tap is still unsynced, and the very first assertion after it reads
+    // straight off the DOM the mount effect produced — not off a value
+    // captured before the reload.
+    //
+    // A literal "reload while context.setOffline(true)" is not something
+    // Chromium can do here: offline emulation blocks every request the
+    // browser makes, navigation included, and this app has no service
+    // worker to serve the shell from cache (confirmed empirically —
+    // page.reload() throws net::ERR_INTERNET_DISCONNECTED). So the
+    // reload's own document fetch is allowed through, while the one
+    // thing that actually matters — the check-in write endpoint — stays
+    // deliberately unreachable across it, so there is no way for Casey's
+    // queued tap to sync during or immediately after the reload.
+    await page.route('**/api/admin/checkin/guests/**', (route) => route.abort())
+    await context.setOffline(false)
+    await page.reload()
+    await context.setOffline(true)
 
+    await expect(page.getByTestId('checkin-progress')).toBeVisible()
+    // Fresh mount, item never synced: this can only read "1 to sync" if
+    // the mount effect actually reloaded the queue from IndexedDB.
+    await expect(page.getByTestId('unsynced-count')).toContainText('1 to sync')
+    // And the raw persisted record — not just the badge text — proves
+    // the guest itself, not merely a count, came back from IndexedDB.
+    const survivedReload = await readPersistedQueue(page)
+    expect(survivedReload.some((item) => item.guestId === casey.id)).toBe(true)
+
+    // Now actually go online: drop the route block and the CDP offline
+    // flag together, which fires a real 'online' event on this already-
+    // mounted document and drives scanner.tsx's own flush() — the same
+    // path a staff member's phone takes when venue Wi-Fi returns.
+    await page.unroute('**/api/admin/checkin/guests/**')
     await context.setOffline(false)
     await expect(page.getByTestId('unsynced-count')).toHaveCount(0, { timeout: 20_000 })
 

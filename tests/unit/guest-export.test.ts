@@ -15,6 +15,14 @@ describe('escapeCsvCell', () => {
     // Prefixing is the whole defence; a leading apostrophe is the accepted cost.
     expect(escapeCsvCell('-5')).toBe('"\'-5"')
   })
+
+  it('neutralises a formula trigger hidden behind leading whitespace', () => {
+    expect(escapeCsvCell('  =HYPERLINK("x")')).toBe('"\'  =HYPERLINK(""x"")"')
+  })
+
+  it('neutralises a formula trigger hidden behind a leading newline', () => {
+    expect(escapeCsvCell('\n=HYPERLINK("x")')).toBe('"\'\n=HYPERLINK(""x"")"')
+  })
 })
 
 describe('guestsToCsvRows', () => {

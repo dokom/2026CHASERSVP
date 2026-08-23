@@ -1,8 +1,14 @@
+/** Lowercases and replaces every run of non-alphanumeric characters with a single hyphen, so `title` is always a valid element id. */
+function slugify(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
 export function BarList({ title, rows }: { title: string; rows: { label: string; count: number; muted?: boolean }[] }) {
   const max = Math.max(1, ...rows.map((r) => r.count))
+  const headingId = `bars-${slugify(title)}`
   return (
-    <section aria-labelledby={`bars-${title}`} className="space-y-3">
-      <h2 id={`bars-${title}`} className="font-serif text-xl">{title}</h2>
+    <section aria-labelledby={headingId} className="space-y-3">
+      <h2 id={headingId} className="font-serif text-xl">{title}</h2>
       {rows.length === 0 ? <p className="text-sm text-[var(--text-muted)]">Nothing yet.</p> : null}
       <ul className="space-y-2">
         {rows.map((row) => (

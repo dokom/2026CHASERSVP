@@ -23,6 +23,15 @@ async function seed() {
   return { staff, invite, token, sam }
 }
 
+/** A second, unrelated party — used to prove a guest id cannot be checked in with someone else's token. */
+async function seedOtherParty() {
+  const { token } = await createInvite(testDb, null, {
+    label: 'Okafor Party', seatsAllotted: 1,
+    primaryGuest: { firstName: 'Ade', lastName: 'Okafor' },
+  })
+  return { token }
+}
+
 describe('resolvePartyByToken', () => {
   it('returns the party with check-in state', async () => {
     const { token } = await seed()
@@ -46,8 +55,8 @@ describe('resolvePartyByToken', () => {
 
 describe('checkInGuest', () => {
   it('checks a guest in and audits it with the staff actor', async () => {
-    const { staff, sam } = await seed()
-    const result = await checkInGuest(testDb, staff.id, sam.id, AT)
+    const { staff, token, sam } = await seed()
+    const result = await checkInGuest(testDb, staff.id, token, sam.id, AT)
     expect(result).toMatchObject({ ok: true, alreadyCheckedIn: false, wasDeclined: false })
     const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: sam.id } })
     expect(fresh.checkedInAt).toEqual(AT)
@@ -57,41 +66,70 @@ describe('checkInGuest', () => {
   })
 
   it('is IDEMPOTENT: a second check-in reports the original time and writes nothing', async () => {
-    const { staff, sam } = await seed()
-    await checkInGuest(testDb, staff.id, sam.id, AT)
+    const { staff, token, sam } = await seed()
+    await checkInGuest(testDb, staff.id, token, sam.id, AT)
     const later = new Date('2026-11-14T19:00:00Z')
-    const second = await checkInGuest(testDb, staff.id, sam.id, later)
+    const second = await checkInGuest(testDb, staff.id, token, sam.id, later)
     expect(second).toMatchObject({ ok: true, alreadyCheckedIn: true })
     if (second.ok) expect(second.checkedInAt).toEqual(AT)
     expect(await testDb.auditLog.count({ where: { action: 'guest.checkIn' } })).toBe(1)
   })
 
   it('checks in a guest who had declined, and says so', async () => {
-    const { staff, sam } = await seed()
+    const { staff, token, sam } = await seed()
     await testDb.guest.update({ where: { id: sam.id }, data: { attending: false } })
-    const result = await checkInGuest(testDb, staff.id, sam.id, AT)
+    const result = await checkInGuest(testDb, staff.id, token, sam.id, AT)
     expect(result).toMatchObject({ ok: true, wasDeclined: true })
     const log = await testDb.auditLog.findFirst({ where: { action: 'guest.checkIn' } })
     expect((log?.meta as Record<string, unknown>).wasDeclined).toBe(true)
   })
 
   it('returns NOT_FOUND for an unknown id', async () => {
-    const { staff } = await seed()
-    expect(await checkInGuest(testDb, staff.id, '0'.repeat(24), AT)).toEqual({ ok: false, reason: 'NOT_FOUND' })
+    const { staff, token } = await seed()
+    expect(await checkInGuest(testDb, staff.id, token, '0'.repeat(24), AT)).toEqual({ ok: false, reason: 'NOT_FOUND' })
   })
 
   it('returns NOT_FOUND rather than throwing for a malformed id', async () => {
-    const { staff } = await seed()
-    await expect(checkInGuest(testDb, staff.id, 'not-an-objectid', AT))
+    const { staff, token } = await seed()
+    await expect(checkInGuest(testDb, staff.id, token, 'not-an-objectid', AT))
       .resolves.toEqual({ ok: false, reason: 'NOT_FOUND' })
+  })
+
+  // I3: the invite token — not the session — scopes the write to one party.
+  it('returns NOT_FOUND when the guest belongs to a different party than the token resolves', async () => {
+    const { staff, sam } = await seed()
+    const other = await seedOtherParty()
+    const result = await checkInGuest(testDb, staff.id, other.token, sam.id, AT)
+    expect(result).toEqual({ ok: false, reason: 'NOT_FOUND' })
+    const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: sam.id } })
+    expect(fresh.checkedInAt).toBeNull()
+  })
+
+  it('returns NOT_FOUND for an unknown token even with a valid guest id', async () => {
+    const { staff, sam } = await seed()
+    expect(await checkInGuest(testDb, staff.id, 'a'.repeat(32), sam.id, AT)).toEqual({ ok: false, reason: 'NOT_FOUND' })
+  })
+
+  // I4: two overlapping replays (the offline queue, a double-tap) must never
+  // both observe checkedInAt === null and both write an audit row.
+  it('is ATOMIC under concurrency: two overlapping check-ins write exactly one audit row', async () => {
+    const { staff, token, sam } = await seed()
+    const [first, second] = await Promise.all([
+      checkInGuest(testDb, staff.id, token, sam.id, AT),
+      checkInGuest(testDb, staff.id, token, sam.id, AT),
+    ])
+    expect(first.ok && second.ok).toBe(true)
+    const wins = [first, second].filter((r) => r.ok && !r.alreadyCheckedIn)
+    expect(wins).toHaveLength(1)
+    expect(await testDb.auditLog.count({ where: { action: 'guest.checkIn' } })).toBe(1)
   })
 })
 
 describe('undoCheckIn', () => {
   it('clears the check-in and audits it', async () => {
-    const { staff, sam } = await seed()
-    await checkInGuest(testDb, staff.id, sam.id, AT)
-    expect(await undoCheckIn(testDb, staff.id, sam.id)).toEqual({ ok: true })
+    const { staff, token, sam } = await seed()
+    await checkInGuest(testDb, staff.id, token, sam.id, AT)
+    expect(await undoCheckIn(testDb, staff.id, token, sam.id)).toEqual({ ok: true })
     const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: sam.id } })
     expect(fresh.checkedInAt).toBeNull()
     expect(fresh.checkedInById).toBeNull()
@@ -99,16 +137,35 @@ describe('undoCheckIn', () => {
   })
 
   it('is a no-op on a guest who was never checked in', async () => {
-    const { staff, sam } = await seed()
-    expect(await undoCheckIn(testDb, staff.id, sam.id)).toEqual({ ok: true })
+    const { staff, token, sam } = await seed()
+    expect(await undoCheckIn(testDb, staff.id, token, sam.id)).toEqual({ ok: true })
     expect(await testDb.auditLog.count({ where: { action: 'guest.undoCheckIn' } })).toBe(0)
+  })
+
+  it('returns NOT_FOUND (ok:false) when the guest belongs to a different party than the token resolves', async () => {
+    const { staff, token, sam } = await seed()
+    await checkInGuest(testDb, staff.id, token, sam.id, AT)
+    const other = await seedOtherParty()
+    expect(await undoCheckIn(testDb, staff.id, other.token, sam.id)).toEqual({ ok: false })
+    const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: sam.id } })
+    expect(fresh.checkedInAt).toEqual(AT)
+  })
+
+  it('is ATOMIC under concurrency: two overlapping undos write exactly one audit row', async () => {
+    const { staff, token, sam } = await seed()
+    await checkInGuest(testDb, staff.id, token, sam.id, AT)
+    await Promise.all([
+      undoCheckIn(testDb, staff.id, token, sam.id),
+      undoCheckIn(testDb, staff.id, token, sam.id),
+    ])
+    expect(await testDb.auditLog.count({ where: { action: 'guest.undoCheckIn' } })).toBe(1)
   })
 })
 
 describe('checkInProgress', () => {
   it('counts attending guests and how many have arrived', async () => {
-    const { staff, sam } = await seed()
-    await checkInGuest(testDb, staff.id, sam.id, AT)
+    const { staff, token, sam } = await seed()
+    await checkInGuest(testDb, staff.id, token, sam.id, AT)
     expect(await checkInProgress(testDb)).toEqual({ attending: 2, checkedIn: 1 })
   })
 })

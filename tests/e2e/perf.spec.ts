@@ -47,6 +47,20 @@ async function measureScriptLoads(page: Page, session: CDPSession, path: string)
 
 const LITE_SCRIPT_BUDGET_BYTES = 150 * 1024
 
+// I7: the raw total (nothing excluded, nothing forgiven) always has to
+// clear this ceiling too. The core-budget check below can be satisfied by
+// an unbounded "motion layer" exclusion that subtracts away an arbitrarily
+// large fraction of the page's script — this hard raw number is what makes
+// that escape route pointless: no exclusion, however large, can make a
+// bloated page pass, because it still has to fit under 190 KB raw.
+const RAW_SCRIPT_CEILING_BYTES = 190 * 1024
+
+// I7: the exclusion itself must be small and singular, or "motion layer"
+// classification becomes a way to hide an arbitrary amount of bloat behind
+// a content-signature match. One chunk, capped at 40 KB — anything more is
+// not "the motion layer," it's the budget check failing to fail.
+const MOTION_LAYER_CHUNK_CEILING_BYTES = 40 * 1024
+
 /**
  * Turbopack chunk filenames are content-hashed and change on every build,
  * so there is no stable path to match against. animejs — the "motion
@@ -110,10 +124,39 @@ test.describe('performance budget', () => {
     // stdout but do not all render custom testInfo.annotations inline, and
     // this number is the one the task explicitly wants visible in the log.
     console.log(`[perf] lite-tier script bytes: ${liteAnnotation}`)
+
+    // I7: the exclusion is bounded on every side, so "classify a big chunk
+    // as motion layer" can never be the thing that makes this test green.
+    //   - exactly one chunk may be excluded — a second content-signature
+    //     match is bloat wearing the motion layer's name, not the motion
+    //     layer itself.
+    //   - that one chunk is capped at 40 KB — the real animejs payload,
+    //     not a dumping ground.
+    //   - at least one script must remain after the exclusion — an empty
+    //     liteCore would make the <150KB check vacuously true.
+    expect(
+      liteMotionLayer.length,
+      `exactly one "motion layer" chunk must be excluded, found ${liteMotionLayer.length}: ` +
+        `${liteMotionLayer.map((l) => l.pathname).join(', ') || '(none)'}`,
+    ).toBe(1)
+    expect(
+      liteMotionLayerBytes,
+      `the excluded motion-layer chunk must be at most 40 KB, was ${liteMotionLayerBytes}B`,
+    ).toBeLessThanOrEqual(MOTION_LAYER_CHUNK_CEILING_BYTES)
+    expect(
+      liteCore.length,
+      'at least one script must remain in the core bundle after excluding the motion layer',
+    ).toBeGreaterThanOrEqual(1)
+
     // Spec §4: "Guest JS bundle (motion layer excluded, lazy) < 150kb
     // gzipped" — the budget is on the core bundle, not the raw total.
     expect(liteCoreBytes, `lite-tier CORE script bytes (motion layer excluded): ${liteCoreBytes}`)
-      .toBeLessThan(LITE_SCRIPT_BUDGET_BYTES)
+      .toBeLessThanOrEqual(LITE_SCRIPT_BUDGET_BYTES)
+    // And the raw total — no exclusion applied at all — must clear its own
+    // ceiling regardless of how the core number above came out, so an
+    // ever-larger "motion layer" can never be the reason this test passes.
+    expect(liteRawTotalBytes, `lite-tier RAW script bytes (nothing excluded): ${liteRawTotalBytes}`)
+      .toBeLessThanOrEqual(RAW_SCRIPT_CEILING_BYTES)
 
     // Full tier: a fresh page/context so the deviceMemory spoof above
     // never applies to it.

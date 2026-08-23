@@ -39,7 +39,7 @@ export default async function GuestPage({
   // never leak the admin double-submit secret to an anonymous invite holder.
   const store = await cookies()
   const csrf = store.get(GUEST_CSRF_COOKIE)?.value
-  if (!csrf) throw new Error('CSRF cookie missing - check that src/middleware.ts matches /i/*')
+  if (!csrf) throw new Error('CSRF cookie missing - check that src/proxy.ts matches /i/*')
 
   const { invite, event, window, table, marker } = data
   const primary = invite.guests.find((guest) => guest.isPrimary) ?? invite.guests[0]

@@ -10,7 +10,7 @@ export default async function LoginPage() {
   const user = await getCurrentUser()
   if (user) redirect(landingPathFor(user.role))
 
-  // src/middleware.ts guarantees the CSRF cookie exists for every /admin
+  // src/proxy.ts guarantees the CSRF cookie exists for every /admin
   // request before this Server Component renders, so this is a plain read.
   // If it is somehow still missing, fail loudly rather than silently
   // rendering a form with an empty CSRF field.

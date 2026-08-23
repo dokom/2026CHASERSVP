@@ -3,7 +3,7 @@
  * in place before render.
  *
  * Pure and framework-free so it can be unit-tested without `next/server`, which
- * `src/middleware.ts` pulls into the Edge bundle. `middleware.ts` calls these
+ * `src/proxy.ts` pulls into the Edge bundle. `middleware.ts` calls these
  * predicates directly to decide which cookie to issue per request — it does
  * NOT re-derive route membership from `config.matcher` — so this file is the
  * single source of truth for "which routes get which CSRF cookie" and the

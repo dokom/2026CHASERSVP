@@ -8,7 +8,7 @@ export const CSRF_COOKIE = 'gala_csrf'
  * its CSRF token into the page's HTML (it has to — there is no Server Action
  * boundary to hide it behind on an unauthenticated GET), and anything an
  * unauthenticated visitor's browser receives must never be the same secret
- * that double-submit-protects `/admin` mutations. See `src/middleware.ts` for
+ * that double-submit-protects `/admin` mutations. See `src/proxy.ts` for
  * the non-overlapping cookie `path` that keeps the two off each other's routes.
  */
 export const GUEST_CSRF_COOKIE = 'gala_guest_csrf'
@@ -17,7 +17,7 @@ export const GUEST_CSRF_COOKIE = 'gala_guest_csrf'
  * 32 bytes encodes to 43 base64url characters.
  *
  * Uses Web Crypto (`crypto.getRandomValues`) rather than `node:crypto`'s
- * `randomBytes` because this function is called from `src/middleware.ts`,
+ * `randomBytes` because this function is called from `src/proxy.ts`,
  * which runs on the Edge runtime by default — `node:crypto` is not
  * available there. `crypto.getRandomValues` and `btoa` are both standard
  * Web APIs available in Node 22 and on Edge, so the same implementation
@@ -71,7 +71,7 @@ function constantTimeEqual(a: string, b: string): boolean {
  * the form body. Compared in constant time.
  *
  * Runs only inside Server Actions on the Node.js runtime, but this module is
- * also imported by `src/middleware.ts`, which is bundled for the Edge
+ * also imported by `src/proxy.ts`, which is bundled for the Edge
  * runtime. Using `constantTimeEqual` instead of `node:crypto`'s
  * `timingSafeEqual` means there is nothing Node-specific here, so this
  * function works unchanged on either runtime and needs no lazy `require`.

@@ -1,4 +1,4 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test'
+import { test, expect, type Page, type TestInfo, type Locator } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { PrismaClient } from '@prisma/client'
 import { createInvite } from '../../src/lib/invites/repository'
@@ -31,7 +31,7 @@ async function assertNoViolations(page: Page, label: string): Promise<void> {
 }
 
 /** Presses Tab until `target` is focused, failing loudly if focus is ever lost to <body>. */
-async function tabTo(page: Page, target: ReturnType<Page['getByLabel']>, maxTabs = 60): Promise<void> {
+async function tabTo(page: Page, target: Locator, maxTabs = 60): Promise<void> {
   for (let i = 0; i < maxTabs; i++) {
     await page.keyboard.press('Tab')
     const activeTag = await page.evaluate(() => document.activeElement?.tagName ?? null)
@@ -166,5 +166,67 @@ test.describe('accessibility — keyboard-only RSVP', () => {
     // every prior step.
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('rsvp-confirmed')).toContainText('look forward')
+  })
+})
+
+test.describe('accessibility — keyboard-only scanner', () => {
+  // The reviewer's note was specific: the scanner's KEYBOARD path (as
+  // opposed to its camera/QR path, which no test can drive) is never
+  // exercised — a staff member who cannot or does not want to use the
+  // camera relies entirely on Tab/type/Enter/Space to resolve a party and
+  // check a guest in. This needs its own dedicated invite, the same way
+  // the keyboard-RSVP block above does: tapping a guest here must never
+  // touch E2E_CHECKIN_TOKEN's Morgan/Casey/Dana, whose untouched
+  // checkedInAt state checkin.spec.ts's own assertions depend on.
+  let scannerToken: string
+  const SCANNER_GUEST_FIRST_NAME = 'Quinn'
+
+  test.beforeAll(async () => {
+    const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+    try {
+      const created = await createInvite(prisma, null, {
+        label: `E2E Keyboard Scanner ${Date.now()}`,
+        seatsAllotted: 1,
+        primaryGuest: { firstName: SCANNER_GUEST_FIRST_NAME, lastName: 'Ames' },
+      })
+      // Check-in only applies to a guest actually coming — set the same
+      // way global-setup does for its own check-in party.
+      await prisma.guest.updateMany({ where: { inviteId: created.invite.id }, data: { attending: true } })
+      scannerToken = created.token
+    } finally {
+      await prisma.$disconnect()
+    }
+  })
+
+  test('resolves a party and checks a guest in using only Tab, typing, Enter and Space', async (
+    { page },
+    testInfo,
+  ) => {
+    desktopOnly(testInfo)
+    await signIn(page, STAFF_CREDENTIALS.email, STAFF_CREDENTIALS.password)
+    await expect(page).toHaveURL(/\/admin\/checkin$/)
+
+    // The exact link shape the QR code would encode — see checkin.spec.ts's
+    // CHECKIN_URL for why (extractToken() only accepts this shape).
+    const appUrl = process.env.APP_URL ?? 'http://localhost:3000'
+    const scannerUrl = `${appUrl}/i/${scannerToken}`
+
+    const linkInput = page.getByLabel('Invitation link')
+    await tabTo(page, linkInput)
+    await page.keyboard.type(scannerUrl)
+    // No <form> to submit (C2) — the input's own onKeyDown handles Enter,
+    // which is exactly what a keyboard-only staff member has: no mouse to
+    // click "Find" with.
+    await page.keyboard.press('Enter')
+
+    const guestButton = page.getByRole('button', { name: new RegExp(SCANNER_GUEST_FIRST_NAME) })
+    await expect(guestButton).toBeVisible()
+
+    // Tab from the still-focused input, through the "Find" button, to the
+    // first (only) guest row, then Space — the native way to activate a
+    // button by keyboard — checks them in exactly as a tap would.
+    await tabTo(page, guestButton)
+    await page.keyboard.press('Space')
+    await expect(guestButton).toContainText('tap to undo')
   })
 })

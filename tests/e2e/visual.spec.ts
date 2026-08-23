@@ -8,6 +8,36 @@ import { E2E_DATABASE_URL } from '../../playwright.config'
 const WIDTHS = [375, 768, 1440] as const
 const SCHEMES = ['dark', 'light'] as const
 
+// The only two invites global-setup itself creates (see its two
+// createInvite() calls) — everything else in the database by the time
+// visual.spec.ts runs is a byproduct of some earlier spec's own fixture
+// (a11y.spec.ts's per-test RSVP/scanner invites, dashboard.spec.ts's
+// declined-invite fixture, invites/csv-import/admin-users's ad-hoc rows).
+const SEEDED_INVITE_LABELS = ['E2E Guest Party', 'E2E Checkin Party'] as const
+
+/**
+ * I8: the admin dashboard's stat tiles (Invited/Responded/Coming/Arrived)
+ * are computed over EVERY invite and guest in the database, not just this
+ * suite's own fixture — so the dashboard baseline used to encode whatever
+ * state earlier specs happened to leave behind (an "Arrived 1" that was
+ * only ever true by accident of which spec ran last). Deleting every
+ * invite (and its guests) this run didn't seed, and resetting the two
+ * seeded parties back to their as-seeded shape, makes those numbers a
+ * property of this function alone — identical on every run, in any order,
+ * regardless of what admin-users/csv-import/invites/dashboard/a11y do to
+ * their own disposable invites earlier in the pass.
+ */
+async function pruneStrayInvites(prisma: PrismaClient): Promise<void> {
+  const stray = await prisma.invite.findMany({
+    where: { label: { notIn: [...SEEDED_INVITE_LABELS] } },
+    select: { id: true },
+  })
+  if (stray.length === 0) return
+  const strayIds = stray.map((i) => i.id)
+  await prisma.guest.deleteMany({ where: { inviteId: { in: strayIds } } })
+  await prisma.invite.deleteMany({ where: { id: { in: strayIds } } })
+}
+
 /**
  * guest-rsvp.spec.ts, event-config.spec.ts and motion.spec.ts all mutate
  * the single fixture invite/guest/event global-setup seeds once per run,
@@ -21,6 +51,8 @@ const SCHEMES = ['dark', 'light'] as const
 async function restoreFixtureState(): Promise<void> {
   const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
   try {
+    await pruneStrayInvites(prisma)
+
     const invite = await prisma.invite.findFirstOrThrow({ where: { label: 'E2E Guest Party' } })
     await prisma.guest.deleteMany({ where: { inviteId: invite.id } })
     await prisma.guest.create({
@@ -34,6 +66,19 @@ async function restoreFixtureState(): Promise<void> {
         extraSeatsRequested: 0,
         extraSeatsStatus: 'NONE',
       },
+    })
+
+    // I8: E2E Checkin Party's three guests (Morgan/Casey/Dana) are the
+    // fixture checkin.spec.ts taps, undoes and re-taps, and Dana starts
+    // seeded as already-arrived — none of that is stable enough to build
+    // a pixel baseline on. Reset every guest under it to its as-seeded
+    // shape: attending (all three are coming) and never checked in,
+    // regardless of what checkin.spec.ts's own tests did to them earlier
+    // in this same run.
+    const checkinInvite = await prisma.invite.findFirstOrThrow({ where: { label: 'E2E Checkin Party' } })
+    await prisma.guest.updateMany({
+      where: { inviteId: checkinInvite.id },
+      data: { attending: true, checkedInAt: null, checkedInById: null },
     })
 
     const event = await prisma.event.findFirstOrThrow()
@@ -70,7 +115,22 @@ async function restoreFixtureState(): Promise<void> {
   }
 }
 
-test.beforeAll(restoreFixtureState)
+// Guarded by project, not just by which tests end up skipping: a file-level
+// beforeAll runs once per project regardless of whether the tests inside it
+// call test.skip() on themselves (skipRedundantProject only fires INSIDE
+// each test body, after beforeAll has already run). Both mobile and desktop
+// share the one e2e database, and mobile's pass through this file finishes
+// well before desktop's checkin.spec.ts run — so an unguarded beforeAll
+// would reset E2E Checkin Party's guests (including Dana's seeded arrival)
+// during mobile's pass, hours before desktop's checkin tests ever look at
+// them, corrupting a fixture this file has no tests actually exercising on
+// mobile. Running the restore only on the project whose tests need it
+// keeps the fixture reset adjacent, in time, to the assertions that depend
+// on it.
+test.beforeAll(async ({}, testInfo) => {
+  if (testInfo.project.name !== 'desktop') return
+  await restoreFixtureState()
+})
 
 /**
  * Every test below pins its own pixel dimensions with page.setViewportSize
@@ -174,5 +234,18 @@ test('admin dashboard — 1440px, dark', async ({ page }, testInfo) => {
   await expect(page).toHaveURL(/\/admin$/)
   // Not networkidle — see the event screen baseline above for why.
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+
+  // I8: assert the numbers themselves, not just the pixels. After
+  // restoreFixtureState() above, exactly two invites exist (E2E Guest
+  // Party, PENDING — E2E Checkin Party, PENDING) and exactly three guests
+  // are marked attending (Morgan/Casey/Dana), none checked in. A pixel
+  // diff alone would happily "pass" against a re-recorded baseline that
+  // silently encodes the wrong numbers again; asserting the values makes
+  // the baseline's content, not just its bytes, part of what's checked.
+  await expect(page.locator('[data-stat="Invited"]')).toHaveText('2')
+  await expect(page.locator('[data-stat="Responded"]')).toHaveText('0%')
+  await expect(page.locator('[data-stat="Coming"]')).toHaveText('3')
+  await expect(page.locator('[data-stat="Arrived"]')).toHaveText('0')
+
   await expect(page).toHaveScreenshot('admin-dashboard-1440-dark.png', { maxDiffPixelRatio: 0.01 })
 })
