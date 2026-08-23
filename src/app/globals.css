@@ -26,6 +26,13 @@
   /* Brass as TEXT (the guest's name, "Table N"). Brass-the-fill is ~1.9:1 on
      the light ground, so text uses a darker brass instead of the fill hex. */
   --brass-ink:  var(--brass);
+  /* Same reasoning as --brass-ink: --danger/--success as TEXT (status pill
+     labels) is only ~3.19:1 / ~1.98:1 on the light ground — below the 4.5:1
+     WCAG AA floor — so text uses darker ink variants; borders keep the
+     literal fill colour, since non-text UI contrast has a lower 3:1 floor
+     that the fill hues already clear. */
+  --danger-ink: var(--danger);
+  --success-ink: var(--success);
 
   /* Type scale. Display sizes are fluid; the hero is deliberately enormous. */
   --text-hero:    clamp(4.75rem, 2rem + 11vw, 9.5rem);
@@ -62,6 +69,10 @@
     --text-muted: #5B6078;
     /* ~5.54:1 against #F4EFE4 — verified, exceeds the 4.5:1 floor. */
     --brass-ink:  #7A5A12;
+    /* ~5.18:1 against #F4EFE4 / ~5.94:1 against #FFFFFF — verified. */
+    --danger-ink: #B23A2E;
+    /* ~6.01:1 against #F4EFE4 / ~6.89:1 against #FFFFFF — verified. */
+    --success-ink: #276639;
     --color-border: #D9D2C2;
   }
 }
@@ -71,6 +82,8 @@
   --text:       var(--bone);
   --text-muted: var(--mist);
   --brass-ink:  var(--brass);
+  --danger-ink: var(--danger);
+  --success-ink: var(--success);
   --color-border: #2A3150;
 }
 /* Mirrors the `prefers-color-scheme: light` block above exactly. Needed
@@ -87,6 +100,8 @@
   --text:       #161A2B;
   --text-muted: #5B6078;
   --brass-ink:  #7A5A12;
+  --danger-ink: #B23A2E;
+  --success-ink: #276639;
   --color-border: #D9D2C2;
 }
 

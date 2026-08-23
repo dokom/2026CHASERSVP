@@ -21,6 +21,15 @@ config({ path: '.env' })
 const TOKEN_ENV_VAR = '__E2E_GUEST_INVITE_TOKEN'
 
 /**
+ * Second env-var carrier, same mechanism as TOKEN_ENV_VAR above: a
+ * dedicated party for tests/e2e/checkin.spec.ts so the door-staff flow
+ * never shares mutable state with the E2E_GUEST_TOKEN party that
+ * guest-rsvp.spec.ts, motion.spec.ts and visual.spec.ts accept/decline/
+ * reset for their own purposes.
+ */
+const CHECKIN_TOKEN_ENV_VAR = '__E2E_CHECKIN_INVITE_TOKEN'
+
+/**
  * The plaintext token for the guest invite seeded below, importable by
  * guest-rsvp.spec.ts (and any other spec that needs a known invite).
  * Evaluated once, when this module is first loaded by a worker process —
@@ -28,6 +37,13 @@ const TOKEN_ENV_VAR = '__E2E_GUEST_INVITE_TOKEN'
  * already run to completion and populated `process.env`.
  */
 export const E2E_GUEST_TOKEN = process.env[TOKEN_ENV_VAR] ?? ''
+
+/**
+ * The plaintext token for the dedicated check-in party (three guests: two
+ * not yet arrived, one already checked in at seed time) — see globalSetup
+ * below for the fixture shape and why it exists.
+ */
+export const E2E_CHECKIN_TOKEN = process.env[CHECKIN_TOKEN_ENV_VAR] ?? ''
 
 // Every collection in the schema, ordered child-before-parent, mirroring
 // tests/helpers/db.ts (which resets the integration-test database the same
@@ -107,7 +123,7 @@ export default async function globalSetup(): Promise<void> {
     })
 
     const adminPasswordHash = await hashPassword(ADMIN_CREDENTIALS.password)
-    await prisma.adminUser.create({
+    const adminUser = await prisma.adminUser.create({
       data: {
         email: ADMIN_CREDENTIALS.email,
         name: 'E2E Admin',
@@ -165,6 +181,47 @@ export default async function globalSetup(): Promise<void> {
       primaryGuest: { firstName: 'Riley', lastName: 'Chen' },
     })
     process.env[TOKEN_ENV_VAR] = token
+
+    // A second, dedicated party for tests/e2e/checkin.spec.ts — the door
+    // scanner flow taps, undoes and offline-queues check-ins, none of
+    // which should ever touch the E2E_GUEST_TOKEN party above (that one
+    // is mutated by guest-rsvp/motion's own RSVP submissions and reset by
+    // visual.spec.ts's own fixture, on a schedule this suite doesn't own).
+    // Three guests: two not yet arrived (one for the plain tap/undo/
+    // re-check flow, one for the offline-queue flow) and one already
+    // checked in at seed time, so the check-in page's "resolve an
+    // already-arrived guest" path and the dashboard's "Arrived" stat both
+    // have real data to read without any spec having to check someone in
+    // first.
+    const { invite: checkinInvite, token: checkinToken } = await createInvite(prisma, null, {
+      label: 'E2E Checkin Party',
+      seatsAllotted: 3,
+      tableNumber: '7',
+      primaryGuest: { firstName: 'Morgan', lastName: 'Blake' },
+    })
+    await prisma.guest.updateMany({
+      where: { inviteId: checkinInvite.id },
+      data: { attending: true },
+    })
+    await prisma.guest.create({
+      data: {
+        inviteId: checkinInvite.id,
+        firstName: 'Casey',
+        lastName: 'Blake',
+        attending: true,
+      },
+    })
+    await prisma.guest.create({
+      data: {
+        inviteId: checkinInvite.id,
+        firstName: 'Dana',
+        lastName: 'Blake',
+        attending: true,
+        checkedInAt: new Date(),
+        checkedInById: adminUser.id,
+      },
+    })
+    process.env[CHECKIN_TOKEN_ENV_VAR] = checkinToken
   } finally {
     await prisma.$disconnect()
   }

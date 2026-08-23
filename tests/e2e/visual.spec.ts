@@ -37,17 +37,32 @@ async function restoreFixtureState(): Promise<void> {
     })
 
     const event = await prisma.event.findFirstOrThrow()
-    await prisma.event.update({ where: { id: event.id }, data: { name: 'The Grand Gala' } })
+    // Pin the time-of-day, not just the date: global-setup seeds startsAt as
+    // `Date.now() + 7 days`, preserving whatever hour the suite happens to
+    // run at. The guest page prints "Saturday, August 29, 2026 at H:MM PM"
+    // on one line at 375px only when the hour renders as a single digit —
+    // 18:00 UTC is 1-2 PM in America/New_York across both EST and EDT, so
+    // this never wraps regardless of when in the day the suite runs. Only
+    // this pixel-perfect suite needs that guarantee; every other spec only
+    // depends on the date being roughly a week out, which this preserves.
+    const fixedStartsAt = new Date(Date.UTC(
+      event.startsAt.getUTCFullYear(), event.startsAt.getUTCMonth(), event.startsAt.getUTCDate(),
+      18, 0, 0, 0,
+    ))
+    await prisma.event.update({
+      where: { id: event.id },
+      data: { name: 'The Grand Gala', startsAt: fixedStartsAt },
+    })
     await prisma.agendaItem.deleteMany({ where: { eventId: event.id } })
     await prisma.agendaItem.createMany({
       data: [
         {
           eventId: event.id,
           title: 'Cocktail Reception',
-          startsAt: new Date(event.startsAt.getTime() - 60 * 60 * 1000),
+          startsAt: new Date(fixedStartsAt.getTime() - 60 * 60 * 1000),
           sortOrder: 0,
         },
-        { eventId: event.id, title: 'Dinner & Dancing', startsAt: event.startsAt, sortOrder: 1 },
+        { eventId: event.id, title: 'Dinner & Dancing', startsAt: fixedStartsAt, sortOrder: 1 },
       ],
     })
   } finally {
@@ -137,4 +152,27 @@ test('admin event screen — 1440px, dark', async ({ page }, testInfo) => {
   // during debugging) — wait for the page's own content instead.
   await expect(page.getByRole('heading', { name: 'Event' })).toBeVisible()
   await expect(page).toHaveScreenshot('admin-event-1440-dark.png', { maxDiffPixelRatio: 0.01 })
+})
+
+test('admin event screen — 1440px, light', async ({ page }, testInfo) => {
+  skipRedundantProject(testInfo)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' })
+  await signIn(page, ADMIN_CREDENTIALS.email, ADMIN_CREDENTIALS.password)
+  await expect(page).toHaveURL(/\/admin$/)
+  await page.goto('/admin/event')
+  // Not networkidle — see the dark baseline above for why.
+  await expect(page.getByRole('heading', { name: 'Event' })).toBeVisible()
+  await expect(page).toHaveScreenshot('admin-event-1440-light.png', { maxDiffPixelRatio: 0.01 })
+})
+
+test('admin dashboard — 1440px, dark', async ({ page }, testInfo) => {
+  skipRedundantProject(testInfo)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' })
+  await signIn(page, ADMIN_CREDENTIALS.email, ADMIN_CREDENTIALS.password)
+  await expect(page).toHaveURL(/\/admin$/)
+  // Not networkidle — see the event screen baseline above for why.
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  await expect(page).toHaveScreenshot('admin-dashboard-1440-dark.png', { maxDiffPixelRatio: 0.01 })
 })

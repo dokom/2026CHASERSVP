@@ -47,6 +47,58 @@ The Playwright E2E suite (`npm run test:e2e`) manages its own database: its
 global setup pushes the schema to `DATABASE_URL_E2E` and wipes/reseeds it on
 every run, so you never need to push to it by hand.
 
+## Door check-in
+
+`/admin/checkin` is reachable by the **STAFF** role (and by ADMIN/OWNER, who
+outrank it) — it is the *only* screen STAFF can reach; every other admin
+route redirects a STAFF session back to it.
+
+- **Scanner URL:** sign in at `/admin/login` with a STAFF account and you
+  land on `/admin/checkin` directly. Point a phone or tablet at it and grant
+  camera access when prompted.
+- **HTTPS is required for the camera.** `getUserMedia` only works on a
+  **secure context** — `localhost` in development, or a real HTTPS origin in
+  production. Loading the check-in page over plain HTTP on a phone shows
+  "Camera unavailable — paste the invitation link below" instead of a
+  viewfinder; that fallback field accepts the same URL a QR code encodes.
+- **Check-ins queue offline.** Tapping a guest updates the row immediately
+  and queues the check-in in the browser's IndexedDB. A red "Offline" badge
+  and an amber "N to sync" counter appear whenever the venue Wi-Fi drops;
+  nothing blocks on the network, and the queue survives a reload. Every
+  queued check-in flushes automatically the moment the connection returns
+  (an `online` event fires, and a 15-second interval retries regardless, in
+  case the browser's own event never fires).
+- **Undoing a mistap:** tap the same guest a second time. Check-in is
+  idempotent either direction — undo, then tap again to re-check them in —
+  and every transition (`guest.checkIn` / `guest.undoCheckIn`) is written to
+  the audit log with the staff member who did it, visible to an OWNER at
+  `/admin/audit`.
+
+## Going live
+
+Work through this checklist before the first real invitation goes out:
+
+1. **Host MongoDB as a real replica set.** A managed service (Atlas, or any
+   MongoDB 8 deployment with `replicaSet` configured) — Prisma's
+   transactions require it; a standalone `mongod` will not work in
+   production any more than it does locally.
+2. **Set a real `SESSION_SECRET`** — 32+ random bytes
+   (`openssl rand -base64 32`), not the value in `.env.example`. **Rotating
+   it later stops every already-printed QR code from decrypting for bulk
+   re-export** (see the Environment section below) — set it once, keep it.
+3. **Set `APP_URL` to the public HTTPS origin** the event will actually run
+   on. The check-in scanner's `extractToken()` refuses a scanned QR code
+   whose origin doesn't match `APP_URL` exactly, so a mismatched value
+   (a staging domain, a trailing slash, `http://` instead of `https://`)
+   makes every printed QR code unscannable at the door.
+4. **Upload the real floorplan** on `/admin/event` and place the table
+   markers so the guest portal's seat map points at the right table.
+5. **Configure the event** — name, date, venue, dress code, agenda, meal
+   options, RSVP deadline — on `/admin/event`.
+6. **Run the seed exactly once** (`npm run db:seed`) against the production
+   database, after the above, then change the seeded owner password
+   immediately.
+
 ## Commands
 
 | Command | Purpose |
@@ -62,6 +114,21 @@ every run, so you never need to push to it by hand.
 | `npm run db:push` | Sync the Prisma schema to `DATABASE_URL` |
 | `npm run db:seed` | Idempotent seed (owner account, sample event, sample invites) |
 | `npm run db:studio` | Prisma Studio |
+
+## Routes
+
+| Route | Role | Purpose |
+| --- | --- | --- |
+| `/i/[token]` | Public (token) | Guest RSVP portal |
+| `/admin/login` | Public | Admin sign-in |
+| `/admin` | ADMIN | Live dashboard — response counts, meal tallies, arrivals |
+| `/admin/invites` | ADMIN | Invite list, creation, CSV import |
+| `/admin/guests` | ADMIN | Every guest across every party, filterable, exportable |
+| `/admin/event` | ADMIN | Event, agenda, meal options, floorplan |
+| `/admin/checkin` | STAFF | Door scanner — STAFF's only reachable screen |
+| `/admin/users` | OWNER | Admin account management |
+| `/admin/audit` | OWNER | Who changed what, and when |
+| `/api/admin/guests/export` | ADMIN | Streamed, formula-injection-safe guest CSV |
 
 ## Environment
 
@@ -93,9 +160,14 @@ you rotate casually.
 request: `npm ci`, start and initiate a single-node MongoDB replica set,
 push the Prisma schema to the app and integration-test databases,
 `npm run typecheck`, `npm run test:coverage` (the 80% coverage gate),
-`npm run build`, then the Playwright suite against its own database. On
-E2E failure, `playwright-report/` and `test-results/` are uploaded as
-build artifacts.
+`npm run build`, `npx playwright install --with-deps chromium` (the axe
+scans and the CDP-based performance test both need a real Chromium, not
+just the Playwright test runner), then the Playwright suite against its own
+database. `perf.spec.ts` prints the guest route's real script-byte counts
+(lite tier, full tier, motion-layer breakdown) as plain `console.log` lines
+during that step, so the CI job log carries the actual figures on every
+run, not just on failure. On E2E failure, `playwright-report/` and
+`test-results/` are uploaded as build artifacts.
 
 ## Documentation
 

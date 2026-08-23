@@ -35,6 +35,12 @@ test('the nonce differs between requests', async ({ page }) => {
 
 test('the invite-token reveal script still runs under the policy', async ({ page }) => {
   await signIn(page, ADMIN_CREDENTIALS.email, ADMIN_CREDENTIALS.password)
+  // Wait for the post-login redirect to land before navigating away — the
+  // sign-in click resolves as soon as it's actionable, not once the session
+  // cookie is actually set, so an immediate goto() can race it and land back
+  // on /admin/login instead (see visual.spec.ts's admin screenshots for the
+  // same wait, and this test's own flakiness under full-suite load without it).
+  await expect(page).toHaveURL(/\/admin$/)
   await page.goto('/admin/invites')
   await page.getByRole('link', { name: 'Open' }).first().click()
   const violations: string[] = []

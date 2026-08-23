@@ -91,7 +91,14 @@ export default async function GuestPage({
           </a>
         </section>
 
-        <div className="lg:grid lg:grid-cols-2 lg:gap-12">
+        {/* flex flex-col + gap-24 below lg reproduces the space-y-24 gap
+            these two sections got for free when they were direct children
+            of <main>'s space-y-24 — wrapping them in one div for the lg
+            grid took them out of that selector's reach, so the gap has to
+            be re-declared here instead (space-y's margin-based approach
+            doesn't translate correctly once the container becomes a grid
+            at lg, hence gap-* on a flex container below lg instead). */}
+        <div className="flex flex-col gap-24 lg:grid lg:grid-cols-2 lg:gap-12">
           {event.agendaItems.length > 0 ? (
             <Evening>
               <section aria-labelledby="evening" className="relative z-10 space-y-6 pl-12">
