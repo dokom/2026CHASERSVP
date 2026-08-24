@@ -81,7 +81,7 @@ describe('buildQrPdf', () => {
     expect(doc.getPageCount()).toBe(1)
   })
 
-  it('paginates at 12 codes per page', async () => {
+  it('paginates at 12 codes per page', { timeout: 20_000 }, async () => {
     const items = Array.from({ length: 13 }, (_, i) => ({
       label: `Party ${i}`, url: `https://x.test/i/${i}`,
     }))

@@ -118,52 +118,25 @@ test.describe('accessibility — keyboard-only RSVP', () => {
     }
   })
 
-  test('accepts, completes all five steps and submits using only Tab, Space, Enter and arrows', async (
-    { page },
-    testInfo,
-  ) => {
+  test('accepts and confirms using only Tab, Space and Enter', async ({ page }, testInfo) => {
     desktopOnly(testInfo)
     await page.goto(`/i/${token}`)
 
-    // Step 1: Will you join us? — land on the (unchecked) radio group,
-    // Space checks the first option, then Tab moves past the whole group
-    // (native roving-tabindex radio behaviour) to Continue.
-    await tabTo(page, page.getByLabel('Joyfully accepts'))
+    // The party is listed by name; nothing is typed. The chips are real
+    // radios (visually hidden inputs inside styled labels), so Tab lands on
+    // the unchecked group, Space checks the first option, and Tab then
+    // moves past the whole group (native roving-tabindex behaviour).
+    await expect(page.getByTestId('guest-response').first()).toContainText('Sasha Vale')
+    const coming = page.getByRole('radio', { name: 'Coming' }).first()
+    await tabTo(page, coming)
     await page.keyboard.press('Space')
-    await expect(page.getByLabel('Joyfully accepts')).toBeChecked()
-    await tabTo(page, page.getByRole('button', { name: 'Continue' }))
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2')
+    await expect(coming).toBeChecked()
 
-    // Step 2: who's coming. The one guest field set is pre-filled from the
-    // invite's own guest record (defaultValue), satisfying the required
-    // first/last name validation without retyping anything — a keyboard
-    // user reviewing their own invitation would see the same. The
-    // "Continue" button is the same DOM node across steps 1-4 (only its
-    // surrounding step content toggles `hidden`), so it keeps focus and
-    // Enter alone advances through each of them.
-    await expect(page.getByLabel('First name').first()).toHaveValue('Sasha')
-    await expect(page.getByLabel('Last name').first()).toHaveValue('Vale')
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '3')
-
-    // Step 3: extra seats (seatsRemaining is 0 on a single-seat invite, so
-    // this is the request panel, not the "add another guest" button — both
-    // its fields are optional).
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '4')
-
-    // Step 4: review, then advance to step 5. React reconciles the
-    // "Continue"/"Send response" button as the same DOM node in both
-    // branches of rsvp-form.tsx's step<STEP_COUNT ternary (same element
-    // type at the same tree position), so it keeps focus straight through
-    // this swap too — no re-navigation needed.
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '5')
-
-    // Step 5: submit — the button under focus is now the type="submit"
-    // "Send response" control; Enter activates it exactly as it did at
-    // every prior step.
+    // Confirm is disabled until every seat has an answer; on this
+    // single-seat invite one answer is enough, and Enter submits.
+    const confirm = page.getByRole('button', { name: 'Confirm response' })
+    await expect(confirm).toBeEnabled()
+    await tabTo(page, confirm)
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('rsvp-confirmed')).toContainText('look forward')
   })

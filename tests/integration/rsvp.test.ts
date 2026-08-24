@@ -12,11 +12,13 @@ beforeEach(resetDb)
 afterAll(() => testDb.$disconnect())
 
 async function seedInvite(seats = 2) {
-  return createInvite(testDb, null, {
+  const seeded = await createInvite(testDb, null, {
     label: 'Reyes Party',
     seatsAllotted: seats,
-    primaryGuest: { firstName: 'Jordan', lastName: 'Reyes', email: 'jordan@example.com' },
+    primaryGuest: { firstName: 'Jordan', lastName: 'Reyes', email: 'jordan@example.com', company: 'Northwind' },
   })
+  const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: seeded.invite.id } })
+  return { ...seeded, primary }
 }
 
 /** Seeds the singleton Event plus one active and one retired meal option. */
@@ -30,133 +32,160 @@ async function seedMealOptions() {
       rsvpDeadline: DEADLINE,
     },
   })
-  const active = await testDb.mealOption.create({
-    data: { eventId: event.id, label: 'Chicken', isActive: true },
-  })
-  const retired = await testDb.mealOption.create({
-    data: { eventId: event.id, label: 'Discontinued Fish', isActive: false },
-  })
+  const active = await testDb.mealOption.create({ data: { eventId: event.id, label: 'Chicken', isActive: true } })
+  const retired = await testDb.mealOption.create({ data: { eventId: event.id, label: 'Discontinued Fish', isActive: false } })
   return { active, retired }
 }
 
-const entry = (over: Record<string, unknown> = {}) => ({
-  firstName: 'Jordan', lastName: 'Reyes', dietary: [], ...over,
-})
+const coming = (id: string, over: Record<string, unknown> = {}) => ({ id, attending: true, ...over })
+const notComing = (id: string) => ({ id, attending: false })
+/** A companion the guest adds on the form: no id yet. */
+const companion = (over: Record<string, unknown> = {}) => ({ attending: true, ...over })
 
 describe('submitRsvp', () => {
   it('records an acceptance and marks the invite ATTENDING', async () => {
-    const { invite, token } = await seedInvite()
-    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
-
-    const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ id: primary.id, company: 'Northwind', title: 'VP' })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
+    const { invite, token, primary } = await seedInvite()
+    const result = await submitRsvp(testDb, token, { guests: [coming(primary.id)], extraSeatsRequested: 0 }, OPEN, DEADLINE)
 
     expect(result).toMatchObject({ ok: true, status: 'ATTENDING' })
     const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })
-    expect(fresh).toMatchObject({ attending: true, company: 'Northwind', title: 'VP' })
+    expect(fresh.attending).toBe(true)
+    expect((await testDb.invite.findUniqueOrThrow({ where: { id: invite.id } })).status).toBe('ATTENDING')
   })
 
   it('records a decline and marks the invite DECLINED', async () => {
-    const { invite, token } = await seedInvite()
-    const result = await submitRsvp(testDb, token,
-      { attending: false, guests: [], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    const { invite, token, primary } = await seedInvite()
+    const result = await submitRsvp(testDb, token, { guests: [notComing(primary.id)], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+
     expect(result).toMatchObject({ ok: true, status: 'DECLINED' })
-    const guests = await testDb.guest.findMany({ where: { inviteId: invite.id } })
-    expect(guests.every((g) => g.attending === false)).toBe(true)
+    expect((await testDb.invite.findUniqueOrThrow({ where: { id: invite.id } })).status).toBe('DECLINED')
+  })
+
+  it('marks a split party PARTIAL', async () => {
+    const { token, primary } = await seedInvite(2)
+    await submitRsvp(testDb, token, { guests: [coming(primary.id), companion()], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    const added = await testDb.guest.findFirstOrThrow({ where: { isPrimary: false } })
+
+    const result = await submitRsvp(testDb, token, { guests: [coming(primary.id), notComing(added.id)], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    expect(result).toMatchObject({ ok: true, status: 'PARTIAL' })
   })
 
   it('stamps respondedAt', async () => {
-    const { invite, token } = await seedInvite()
-    await submitRsvp(testDb, token,
-      { attending: false, guests: [], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    const { invite, token, primary } = await seedInvite()
+    await submitRsvp(testDb, token, { guests: [coming(primary.id)], extraSeatsRequested: 0 }, OPEN, DEADLINE)
     const fresh = await testDb.invite.findUniqueOrThrow({ where: { id: invite.id } })
-    expect(fresh.respondedAt).not.toBeNull()
+    expect(fresh.respondedAt?.toISOString()).toBe(OPEN.toISOString())
   })
 
-  it('creates additional guests up to the seat allowance', async () => {
-    const { invite, token } = await seedInvite(2)
-    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
+  // --- the guest never edits what the organiser imported --------------------
+
+  it('leaves imported contact details untouched when answering', async () => {
+    const { token, primary } = await seedInvite()
+    await submitRsvp(testDb, token, { guests: [coming(primary.id)], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })
+    expect(fresh).toMatchObject({ firstName: 'Jordan', lastName: 'Reyes', email: 'jordan@example.com', company: 'Northwind' })
+  })
+
+  it('ignores names sent for a known guest', async () => {
+    const { token, primary } = await seedInvite()
     await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ id: primary.id }), entry({ firstName: 'Sam', lastName: 'Reyes' })],
+      guests: [coming(primary.id, { firstName: 'Hijacked', lastName: 'Name' })],
       extraSeatsRequested: 0,
     }, OPEN, DEADLINE)
-    expect(await testDb.guest.count({ where: { inviteId: invite.id } })).toBe(2)
+    const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })
+    expect(fresh.firstName).toBe('Jordan')
+  })
+
+  // --- companions ----------------------------------------------------------
+
+  it('adds a named companion up to the seat allowance', async () => {
+    const { invite, token, primary } = await seedInvite(2)
+    await submitRsvp(testDb, token, {
+      guests: [coming(primary.id), companion({ firstName: 'Sam', lastName: 'Reyes' })],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+    const guests = await testDb.guest.findMany({ where: { inviteId: invite.id } })
+    expect(guests).toHaveLength(2)
+    expect(guests.find((g) => !g.isPrimary)).toMatchObject({ firstName: 'Sam', lastName: 'Reyes', attending: true })
+  })
+
+  it('names an unnamed companion after the host', async () => {
+    const { token, primary } = await seedInvite(2)
+    await submitRsvp(testDb, token, { guests: [coming(primary.id), companion()], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    const added = await testDb.guest.findFirstOrThrow({ where: { isPrimary: false } })
+    expect(added).toMatchObject({ firstName: 'Guest of Jordan', lastName: 'Reyes' })
+  })
+
+  it('does not create a companion who is marked as not coming', async () => {
+    const { invite, token, primary } = await seedInvite(2)
+    await submitRsvp(testDb, token, { guests: [coming(primary.id), { attending: false }], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    expect(await testDb.guest.count({ where: { inviteId: invite.id } })).toBe(1)
   })
 
   it('refuses more guests than the seat allowance', async () => {
-    const { token } = await seedInvite(1)
-    const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry(), entry({ firstName: 'Sam' })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
+    const { token, primary } = await seedInvite(1)
+    const result = await submitRsvp(testDb, token, { guests: [coming(primary.id), companion()], extraSeatsRequested: 0 }, OPEN, DEADLINE)
     expect(result).toEqual({ ok: false, reason: 'SEAT_LIMIT' })
   })
 
+  // --- ids ------------------------------------------------------------------
+
   it('REFUSES a guest id belonging to another invite', async () => {
-    // Horizontal privilege escalation: without this check a guest could rewrite
-    // any other party's details by pasting their guest id into the payload.
+    // Horizontal privilege escalation: without this check a guest could answer
+    // for any other party by pasting their guest id into the payload.
     const { token } = await seedInvite()
     const other = await createInvite(testDb, null, {
-      label: 'Okafor Party', seatsAllotted: 1,
-      primaryGuest: { firstName: 'Ada', lastName: 'Okafor' },
+      label: 'Okafor Party', seatsAllotted: 1, primaryGuest: { firstName: 'Ada', lastName: 'Okafor' },
     })
     const victim = await testDb.guest.findFirstOrThrow({ where: { inviteId: other.invite.id } })
 
-    const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ id: victim.id, firstName: 'Hijacked' })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
+    const result = await submitRsvp(testDb, token, { guests: [notComing(victim.id)], extraSeatsRequested: 0 }, OPEN, DEADLINE)
 
     expect(result).toEqual({ ok: false, reason: 'FOREIGN_GUEST' })
     const untouched = await testDb.guest.findUniqueOrThrow({ where: { id: victim.id } })
-    expect(untouched.firstName).toBe('Ada')
+    expect(untouched.attending).toBeNull()
   })
 
   it('writes nothing at all when a foreign guest id is present', async () => {
-    const { invite, token } = await seedInvite()
+    const { token, primary } = await seedInvite()
     const other = await createInvite(testDb, null, {
-      label: 'Okafor Party', seatsAllotted: 1,
-      primaryGuest: { firstName: 'Ada', lastName: 'Okafor' },
+      label: 'Okafor Party', seatsAllotted: 1, primaryGuest: { firstName: 'Ada', lastName: 'Okafor' },
     })
     const victim = await testDb.guest.findFirstOrThrow({ where: { inviteId: other.invite.id } })
-    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
 
-    await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ id: primary.id, company: 'Should not persist' }), entry({ id: victim.id })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
+    await submitRsvp(testDb, token, { guests: [coming(primary.id), coming(victim.id)], extraSeatsRequested: 0 }, OPEN, DEADLINE)
 
     const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })
-    expect(fresh.company).toBeNull()
+    expect(fresh.attending).toBeNull()
   })
 
+  it('REJECTS duplicate guest ids', async () => {
+    const { token, primary } = await seedInvite(2)
+    const result = await submitRsvp(testDb, token, {
+      guests: [coming(primary.id), notComing(primary.id)],
+      extraSeatsRequested: 0,
+    }, OPEN, DEADLINE)
+    expect(result).toEqual({ ok: false, reason: 'DUPLICATE_GUEST' })
+    expect((await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })).attending).toBeNull()
+  })
+
+  // --- window and token -----------------------------------------------------
+
   it('refuses once the deadline has passed', async () => {
-    const { token } = await seedInvite()
-    const result = await submitRsvp(testDb, token,
-      { attending: false, guests: [], extraSeatsRequested: 0 }, CLOSED, DEADLINE)
+    const { token, primary } = await seedInvite()
+    const result = await submitRsvp(testDb, token, { guests: [notComing(primary.id)], extraSeatsRequested: 0 }, CLOSED, DEADLINE)
     expect(result).toEqual({ ok: false, reason: 'CLOSED' })
   })
 
   it('refuses an unknown token', async () => {
-    const result = await submitRsvp(testDb, 'nope',
-      { attending: false, guests: [], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    const result = await submitRsvp(testDb, 'nope', { guests: [companion()], extraSeatsRequested: 0 }, OPEN, DEADLINE)
     expect(result).toEqual({ ok: false, reason: 'NOT_FOUND' })
   })
 
   it('records an extra-seat request as PENDING without creating seats', async () => {
-    const { invite, token } = await seedInvite(1)
+    const { invite, token, primary } = await seedInvite(1)
     await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry()],
-      extraSeatsRequested: 2,
-      extraSeatsReason: 'Bringing my parents',
+      guests: [coming(primary.id)], extraSeatsRequested: 2, extraSeatsReason: 'Bringing my parents',
     }, OPEN, DEADLINE)
 
     const fresh = await testDb.invite.findUniqueOrThrow({ where: { id: invite.id } })
@@ -165,67 +194,40 @@ describe('submitRsvp', () => {
     expect(fresh.seatsAllotted).toBe(1)
   })
 
-  // --- C2: resubmission must not destroy seat/check-in state -------------
+  // --- C2: a resubmission must never destroy seat or check-in state -----------
 
-  it('REFUSES to delete a checked-in guest, and reassigns isPrimary, when a ' +
-    'resubmission strips hidden id inputs', async () => {
-    const { invite, token } = await seedInvite(2)
-    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
-
-    // First submission, with real ids, seats the party normally.
+  it('REFUSES a resubmission that strips the ids rather than replacing a checked-in guest', async () => {
+    const { invite, token, primary } = await seedInvite(2)
     await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ id: primary.id }), entry({ firstName: 'Sam', lastName: 'Reyes' })],
-      extraSeatsRequested: 0,
+      guests: [coming(primary.id), companion({ firstName: 'Sam', lastName: 'Reyes' })], extraSeatsRequested: 0,
     }, OPEN, DEADLINE)
-
-    const [g1, g2] = await testDb.guest.findMany({
-      where: { inviteId: invite.id }, orderBy: { createdAt: 'asc' },
-    })
-    // g1 is the seeded primary. Seat and check in g2 the way door staff would.
+    const sam = await testDb.guest.findFirstOrThrow({ where: { firstName: 'Sam' } })
     const checkinTime = new Date('2026-09-15T18:00:00Z')
-    await testDb.guest.update({
-      where: { id: g2!.id }, data: { tableNumber: '7', checkedInAt: checkinTime },
-    })
+    await testDb.guest.update({ where: { id: sam.id }, data: { tableNumber: '7', checkedInAt: checkinTime } })
 
-    // Resubmission with every hidden id input stripped — indistinguishable,
-    // from this function's point of view, from a form that never sent them.
-    const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ firstName: g1!.firstName }), entry({ firstName: 'Sam', lastName: 'Reyes' })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
+    // Every hidden id stripped: indistinguishable from a form that never sent
+    // them. Both entries now look like companions, and the party would grow to
+    // four on a two-seat invite.
+    const result = await submitRsvp(testDb, token, { guests: [companion(), companion()], extraSeatsRequested: 0 }, OPEN, DEADLINE)
 
-    expect(result).toMatchObject({ ok: true })
-
-    const stillCheckedIn = await testDb.guest.findUnique({ where: { id: g2!.id } })
-    expect(stillCheckedIn).not.toBeNull()
-    expect(stillCheckedIn?.checkedInAt?.toISOString()).toBe(checkinTime.toISOString())
-    expect(stillCheckedIn?.tableNumber).toBe('7')
-
-    // g1 (not checked in) was legitimately replaced by the resubmission, but
-    // the party must still have exactly one primary guest afterward.
-    const finalGuests = await testDb.guest.findMany({ where: { inviteId: invite.id } })
-    expect(finalGuests.filter((g) => g.isPrimary)).toHaveLength(1)
+    expect(result).toEqual({ ok: false, reason: 'SEAT_LIMIT' })
+    const stillCheckedIn = await testDb.guest.findUniqueOrThrow({ where: { id: sam.id } })
+    expect(stillCheckedIn.checkedInAt?.toISOString()).toBe(checkinTime.toISOString())
+    expect(stillCheckedIn.tableNumber).toBe('7')
+    expect(await testDb.guest.count({ where: { inviteId: invite.id } })).toBe(2)
   })
 
-  it('preserves isPrimary and tableNumber across a resubmission that reuses the same id', async () => {
-    const { invite, token } = await seedInvite(1)
-    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
+  it('preserves isPrimary and tableNumber across repeated answers', async () => {
+    const { invite, token, primary } = await seedInvite(1)
     await testDb.guest.update({ where: { id: primary.id }, data: { tableNumber: '3' } })
 
-    const payload = {
-      attending: true,
-      guests: [entry({ id: primary.id, company: 'Northwind' })],
-      extraSeatsRequested: 0,
-    }
+    const payload = { guests: [coming(primary.id)], extraSeatsRequested: 0 }
     await submitRsvp(testDb, token, payload, OPEN, DEADLINE)
     await submitRsvp(testDb, token, payload, OPEN, DEADLINE)
 
     const fresh = await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })
     expect(fresh.isPrimary).toBe(true)
     expect(fresh.tableNumber).toBe('3')
-    expect(fresh.company).toBe('Northwind')
     expect(await testDb.guest.count({ where: { inviteId: invite.id } })).toBe(1)
   })
 
@@ -233,67 +235,39 @@ describe('submitRsvp', () => {
 
   it('REJECTS a mealOptionId that has been retired', async () => {
     const { retired } = await seedMealOptions()
-    const { token } = await seedInvite(1)
-    const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ mealOptionId: retired.id })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
+    const { token, primary } = await seedInvite(1)
+    const result = await submitRsvp(testDb, token, { guests: [coming(primary.id, { mealOptionId: retired.id })], extraSeatsRequested: 0 }, OPEN, DEADLINE)
     expect(result).toEqual({ ok: false, reason: 'INVALID_MEAL_OPTION' })
   })
 
   it('REJECTS a mealOptionId belonging to no meal option at all', async () => {
     await seedMealOptions()
-    const { token } = await seedInvite(1)
+    const { token, primary } = await seedInvite(1)
     const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ mealOptionId: '507f1f77bcf86cd799439011' })],
-      extraSeatsRequested: 0,
+      guests: [coming(primary.id, { mealOptionId: '507f1f77bcf86cd799439011' })], extraSeatsRequested: 0,
     }, OPEN, DEADLINE)
     expect(result).toEqual({ ok: false, reason: 'INVALID_MEAL_OPTION' })
   })
 
-  it('ACCEPTS an active mealOptionId', async () => {
+  it('ACCEPTS an active mealOptionId and stores it', async () => {
     const { active } = await seedMealOptions()
-    const { token } = await seedInvite(1)
-    const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ mealOptionId: active.id })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
+    const { token, primary } = await seedInvite(1)
+    const result = await submitRsvp(testDb, token, { guests: [coming(primary.id, { mealOptionId: active.id })], extraSeatsRequested: 0 }, OPEN, DEADLINE)
     expect(result).toMatchObject({ ok: true })
+    expect((await testDb.guest.findUniqueOrThrow({ where: { id: primary.id } })).mealOptionId).toBe(active.id)
   })
 
-  // --- I2: duplicate own-ids must not delete a party member ---------------
-
-  it('REJECTS duplicate guest ids instead of silently deleting the other party member', async () => {
-    const { invite, token } = await seedInvite(2)
-    const primary = await testDb.guest.findFirstOrThrow({ where: { inviteId: invite.id } })
-    await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ id: primary.id }), entry({ firstName: 'Sam', lastName: 'Reyes' })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
-    const [g1, g2] = await testDb.guest.findMany({
-      where: { inviteId: invite.id }, orderBy: { createdAt: 'asc' },
-    })
-
-    const result = await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry({ id: g1!.id }), entry({ id: g1!.id, firstName: 'Duplicate' })],
-      extraSeatsRequested: 0,
-    }, OPEN, DEADLINE)
-
-    expect(result).toEqual({ ok: false, reason: 'DUPLICATE_GUEST' })
-    expect(await testDb.guest.findUnique({ where: { id: g2!.id } })).not.toBeNull()
+  it('ignores a meal choice for a guest who is not coming', async () => {
+    const { retired } = await seedMealOptions()
+    const { token, primary } = await seedInvite(1)
+    const result = await submitRsvp(testDb, token, { guests: [{ ...notComing(primary.id), mealOptionId: retired.id }], extraSeatsRequested: 0 }, OPEN, DEADLINE)
+    expect(result).toMatchObject({ ok: true, status: 'DECLINED' })
   })
 
   it('audits the submission with real information and without ever recording the token', async () => {
-    const { invite, token } = await seedInvite(2)
+    const { invite, token, primary } = await seedInvite(2)
     await submitRsvp(testDb, token, {
-      attending: true,
-      guests: [entry(), entry({ firstName: 'Sam', lastName: 'Reyes' })],
-      extraSeatsRequested: 0,
+      guests: [coming(primary.id), companion({ firstName: 'Sam', lastName: 'Reyes' })], extraSeatsRequested: 0,
     }, OPEN, DEADLINE)
 
     const log = await testDb.auditLog.findFirstOrThrow({ where: { action: 'rsvp.submit' } })

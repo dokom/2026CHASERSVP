@@ -3,7 +3,7 @@ import { hashToken } from '@/lib/crypto/tokens'
 import { deriveInviteStatus, type InviteStatus } from '@/lib/invites/status'
 import { writeAudit } from '@/lib/audit'
 import { rsvpWindow } from './deadline'
-import type { GuestEntry, RsvpSubmission } from '@/lib/validation/guest'
+import type { GuestResponse, RsvpSubmission } from '@/lib/validation/guest'
 
 export type RsvpResult =
   | { ok: true; inviteId: string; status: InviteStatus }
@@ -18,117 +18,74 @@ export type RsvpResult =
         | 'INVALID_MEAL_OPTION'
     }
 
-/** Thrown internally to short-circuit the transaction when the seat limit is exceeded. */
-export class SeatAllowanceError extends Error {
-  constructor() {
-    super('Requested party size exceeds the seat allowance')
-    this.name = 'SeatAllowanceError'
-  }
+type Refusal = Extract<RsvpResult, { ok: false }>['reason']
+type KnownGuest = { id: string; isPrimary: boolean; firstName: string; lastName: string }
+type KnownResponse = GuestResponse & { id: string }
+
+const SELECT_INVITE = {
+  id: true,
+  seatsAllotted: true,
+  guests: {
+    select: { id: true, isPrimary: true, firstName: true, lastName: true },
+    orderBy: { createdAt: 'asc' as const },
+  },
 }
 
-/** Thrown internally to short-circuit the transaction when a guest id is not this invite's own. */
-export class ForeignGuestError extends Error {
-  constructor() {
-    super('Submitted guest id does not belong to this invite')
-    this.name = 'ForeignGuestError'
-  }
-}
-
-function toGuestData(entry: GuestEntry): Omit<Prisma.GuestUncheckedCreateInput, 'inviteId'> {
+/** A companion the guest added without naming them: "Guest of Jordan Reyes". */
+function companionName(host: KnownGuest | undefined, entry: GuestResponse): { firstName: string; lastName: string } {
   return {
-    firstName: entry.firstName,
-    lastName: entry.lastName,
-    badgeName: entry.badgeName || null,
-    company: entry.company || null,
-    title: entry.title || null,
-    email: entry.email || null,
-    phone: entry.phone || null,
-    mealOptionId: entry.mealOptionId || null,
-    dietary: entry.dietary,
-    accessibilityNeeds: entry.accessibilityNeeds || null,
-    attending: true,
+    firstName: entry.firstName || (host ? `Guest of ${host.firstName}` : 'Guest'),
+    lastName: entry.lastName || host?.lastName || '',
   }
 }
 
 /**
- * Updates one existing guest, explicitly carrying isPrimary, tableNumber and
- * checkedInAt through unchanged. `toGuestData` never sets these fields, so
- * relying on Prisma's "omitted key means untouched" behavior alone is one
- * accidental future refactor away from wiping them; reading the row back and
- * re-asserting the same values makes the preservation an explicit invariant
- * instead of an implicit one.
+ * Records a known guest's answer. Only `attending` and (when coming) the meal
+ * are written. Everything the organiser imported (name, company, email) and
+ * everything the door has done (table, check-in) is structurally untouched:
+ * this update never spreads a whole object over the row.
  */
-async function updateExistingGuest(
-  tx: Prisma.TransactionClient,
-  entry: GuestEntry & { id: string },
-): Promise<void> {
-  const existing = await tx.guest.findUniqueOrThrow({
-    where: { id: entry.id },
-    select: { isPrimary: true, tableNumber: true, checkedInAt: true },
-  })
+async function answerForKnownGuest(tx: Prisma.TransactionClient, entry: KnownResponse): Promise<void> {
   await tx.guest.update({
     where: { id: entry.id },
-    data: { ...toGuestData(entry), ...existing },
+    data: {
+      attending: entry.attending,
+      ...(entry.attending ? { mealOptionId: entry.mealOptionId || null } : {}),
+    },
   })
 }
 
+/** Ids that repeat, or that belong to some other party, refuse the whole submission. */
+function checkSubmittedIds(submittedIds: string[], known: KnownGuest[]): Refusal | null {
+  // Two entries claiming the same id collapse to one row: without this check,
+  // [id1, id1] on a 2-seat party would silently answer for one guest twice.
+  if (new Set(submittedIds).size !== submittedIds.length) return 'DUPLICATE_GUEST'
+  // Every submitted id must already belong to THIS invite. Without this a guest
+  // could answer for another party's members by pasting their guest id.
+  const ownIds = new Set(known.map((g) => g.id))
+  if (submittedIds.some((id) => !ownIds.has(id))) return 'FOREIGN_GUEST'
+  return null
+}
+
 /**
- * If nobody in the party survived this submission as isPrimary — e.g. a
- * resubmission stripped every hidden id, so every entry became a fresh
- * create() defaulting isPrimary to false — the page that greets the guest
- * has nobody correct to fall back to. Rather than have a create() guess at
- * isPrimary while other entries in the same submission are still being
- * processed (risking two guests both landing on true), the invariant is
- * restored once, after the batch, by promoting the earliest-created
- * survivor. Deterministic, and correct regardless of submission order.
+ * A submitted mealOptionId is just an ObjectId-shaped string at this point.
+ * Mongo has no foreign key to stop a retired option or an unrelated
+ * document's id from being written through, so intersect against the active
+ * options actually referenced instead of trusting the shape check alone.
  */
-async function ensurePartyHasPrimary(tx: Prisma.TransactionClient, inviteId: string): Promise<void> {
-  const remaining = await tx.guest.findMany({
-    where: { inviteId },
-    select: { id: true, isPrimary: true },
-    orderBy: { createdAt: 'asc' },
-  })
-  const [earliest] = remaining
-  if (earliest && !remaining.some((g) => g.isPrimary)) {
-    await tx.guest.update({ where: { id: earliest.id }, data: { isPrimary: true } })
-  }
+async function hasOnlyActiveMeals(db: PrismaClient, guests: GuestResponse[]): Promise<boolean> {
+  const mealIds = guests
+    .filter((g) => g.attending)
+    .map((g) => g.mealOptionId)
+    .filter((id): id is string => !!id)
+  if (mealIds.length === 0) return true
+  const active = await db.mealOption.findMany({ where: { id: { in: mealIds }, isActive: true }, select: { id: true } })
+  const activeIds = new Set(active.map((m) => m.id))
+  return mealIds.every((id) => activeIds.has(id))
 }
 
 /**
- * Upserts every submitted guest for an attending party and deletes any
- * previously-known guest the party did not resubmit (a seat given back).
- * `submittedIds` — ids already verified to belong to this invite — seeds the
- * kept set so newly-created guests can be added to it as they're made.
- */
-async function applyAttendingGuests(
-  tx: Prisma.TransactionClient,
-  inviteId: string,
-  guests: GuestEntry[],
-  submittedIds: string[],
-): Promise<void> {
-  const keptIds = new Set(submittedIds)
-
-  for (const entry of guests) {
-    if (entry.id) {
-      await updateExistingGuest(tx, entry as GuestEntry & { id: string })
-    } else {
-      const created = await tx.guest.create({ data: { ...toGuestData(entry), inviteId } })
-      keptIds.add(created.id)
-    }
-  }
-
-  // Someone already walked through the door for a checked-in guest — that
-  // record is not the party's to discard just by omitting it from a
-  // resubmission (accidentally, via a stripped hidden id, or otherwise).
-  await tx.guest.deleteMany({
-    where: { inviteId, id: { notIn: [...keptIds] }, checkedInAt: null },
-  })
-
-  await ensurePartyHasPrimary(tx, inviteId)
-}
-
-/**
- * Applies a guest's RSVP.
+ * Applies a party's RSVP.
  *
  * The whole thing is one transaction: a party that half-submits is worse than
  * one that fails, because nobody notices. `now` and `deadline` are parameters
@@ -144,61 +101,41 @@ export async function submitRsvp(
   if (!token) return { ok: false, reason: 'NOT_FOUND' }
   if (rsvpWindow(deadline, now).hasClosed) return { ok: false, reason: 'CLOSED' }
 
-  const invite = await db.invite.findUnique({
-    where: { tokenHash: hashToken(token) },
-    select: { id: true, seatsAllotted: true, guests: { select: { id: true } } },
-  })
+  const invite = await db.invite.findUnique({ where: { tokenHash: hashToken(token) }, select: SELECT_INVITE })
   if (!invite) return { ok: false, reason: 'NOT_FOUND' }
 
-  if (submission.attending && submission.guests.length > invite.seatsAllotted) {
+  const submittedIds = submission.guests.map((g) => g.id).filter((id): id is string => !!id)
+  const idProblem = checkSubmittedIds(submittedIds, invite.guests)
+  if (idProblem) return { ok: false, reason: idProblem }
+
+  // The party after this submission is everyone already known plus every
+  // companion being added. Checked against the allowance BEFORE anything is
+  // written, so a stripped or replayed form can never mint phantom seats,
+  // and nothing ever has to be deleted to make room. That is what used to put
+  // a checked-in guest's record at risk.
+  const companions = submission.guests.filter((g) => !g.id && g.attending)
+  if (invite.guests.length + companions.length > invite.seatsAllotted) {
     return { ok: false, reason: 'SEAT_LIMIT' }
   }
 
-  const submittedIds = submission.guests.map((g) => g.id).filter((id): id is string => !!id)
+  if (!(await hasOnlyActiveMeals(db, submission.guests))) return { ok: false, reason: 'INVALID_MEAL_OPTION' }
 
-  // Two entries claiming the same id collapse to one kept id: without this
-  // check, [id1, id1] on a 2-seat party silently deletes the second guest.
-  if (new Set(submittedIds).size !== submittedIds.length) {
-    return { ok: false, reason: 'DUPLICATE_GUEST' }
-  }
-
-  // Every submitted id must already belong to THIS invite. Without this a guest
-  // could rewrite another party's details by pasting their guest id.
-  const ownIds = new Set(invite.guests.map((g) => g.id))
-  if (submittedIds.some((id) => !ownIds.has(id))) {
-    return { ok: false, reason: 'FOREIGN_GUEST' }
-  }
-
-  // A submitted mealOptionId is just an ObjectId-shaped string at this point —
-  // Mongo has no foreign key to stop a retired option or an unrelated
-  // document's id from being written through. Intersect against the active
-  // options actually referenced instead of trusting the shape check alone.
-  const submittedMealIds = submission.guests
-    .map((g) => g.mealOptionId)
-    .filter((id): id is string => !!id)
-  if (submittedMealIds.length > 0) {
-    const activeMeals = await db.mealOption.findMany({
-      where: { id: { in: submittedMealIds }, isActive: true },
-      select: { id: true },
-    })
-    const activeMealIds = new Set(activeMeals.map((m) => m.id))
-    if (submittedMealIds.some((id) => !activeMealIds.has(id))) {
-      return { ok: false, reason: 'INVALID_MEAL_OPTION' }
-    }
-  }
+  const host = invite.guests.find((g) => g.isPrimary) ?? invite.guests[0]
 
   const status = await db.$transaction(async (tx) => {
-    if (!submission.attending) {
-      await tx.guest.updateMany({ where: { inviteId: invite.id }, data: { attending: false } })
-    } else {
-      await applyAttendingGuests(tx, invite.id, submission.guests, submittedIds)
+    for (const entry of submission.guests) {
+      if (entry.id) {
+        await answerForKnownGuest(tx, entry as KnownResponse)
+      } else if (entry.attending) {
+        await tx.guest.create({
+          data: { inviteId: invite.id, ...companionName(host, entry), attending: true, mealOptionId: entry.mealOptionId || null },
+        })
+      }
     }
 
-    const guests = await tx.guest.findMany({
-      where: { inviteId: invite.id },
-      select: { attending: true },
-    })
+    const guests = await tx.guest.findMany({ where: { inviteId: invite.id }, select: { attending: true } })
     const nextStatus = deriveInviteStatus(guests)
+    const partySize = guests.filter((g) => g.attending).length
 
     await tx.invite.update({
       where: { id: invite.id },
@@ -220,11 +157,7 @@ export async function submitRsvp(
       action: 'rsvp.submit',
       entity: 'Invite',
       entityId: invite.id,
-      meta: {
-        attending: submission.attending,
-        partySize: submission.guests.length,
-        extraSeatsRequested: submission.extraSeatsRequested,
-      },
+      meta: { attending: partySize > 0, partySize, extraSeatsRequested: submission.extraSeatsRequested },
     })
 
     return nextStatus

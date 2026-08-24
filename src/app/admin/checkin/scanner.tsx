@@ -45,13 +45,18 @@ function subscribeOnline(callback: () => void): () => void {
 const getOnlineSnapshot = () => navigator.onLine
 const getServerOnlineSnapshot = () => true
 
-export function Scanner({ csrf, appUrl }: { csrf: string; appUrl: string }) {
+type Progress = { attending: number; checkedIn: number }
+
+export function Scanner({ csrf, appUrl, initialProgress }: { csrf: string; appUrl: string; initialProgress: Progress }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const linkInputRef = useRef<HTMLInputElement>(null)
   const [party, setParty] = useState<Party | null>(null)
   const [queue, setQueue] = useState<QueuedItem[]>([])
   const [status, setStatus] = useState<string>('Point the camera at an invitation')
   const [mounted, setMounted] = useState(false)
+  // Server-rendered starting point, then kept honest by every tap and undo
+  // here, so the header never needs a reload to catch up with the door.
+  const [progress, setProgress] = useState<Progress>(initialProgress)
   const online = useSyncExternalStore(subscribeOnline, getOnlineSnapshot, getServerOnlineSnapshot)
   const lastScan = useRef<string>('')
   const partyTokenRef = useRef<string | null>(null)
@@ -214,6 +219,7 @@ export function Scanner({ csrf, appUrl }: { csrf: string; appUrl: string }) {
     if (!token) return
     const at = new Date().toISOString()
     setParty((p) => p && { ...p, guests: p.guests.map((g) => (g.id === guest.id ? { ...g, checkedInAt: new Date(at) } : g)) })
+    setProgress((p) => ({ ...p, checkedIn: p.checkedIn + 1 }))
     await mutateQueue((current) => enqueueWithToken(current, guest.id, at, token))
     setStatus(`Checked in ${guestDisplayName(guest)}`)
     if (navigator.onLine) void flush()
@@ -223,6 +229,7 @@ export function Scanner({ csrf, appUrl }: { csrf: string; appUrl: string }) {
     const token = partyTokenRef.current
     if (!token) return
     setParty((p) => p && { ...p, guests: p.guests.map((g) => (g.id === guest.id ? { ...g, checkedInAt: null } : g)) })
+    setProgress((p) => ({ ...p, checkedIn: Math.max(0, p.checkedIn - 1) }))
     await mutateQueue((current) => asQueuedItems(markSynced(current, guest.id)))
     setStatus(`Undid check-in for ${guestDisplayName(guest)}`)
     await fetch(`/api/admin/checkin/guests/${guest.id}`, {
@@ -232,6 +239,13 @@ export function Scanner({ csrf, appUrl }: { csrf: string; appUrl: string }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-baseline justify-between">
+        <h1 className="font-serif text-2xl">Check-in</h1>
+        <p className="text-sm text-[var(--text-muted)]" data-testid="checkin-progress" aria-live="polite">
+          {progress.checkedIn} of {progress.attending} arrived
+        </p>
+      </div>
+
       <div className="relative overflow-hidden rounded-lg bg-black">
         <video ref={videoRef} muted playsInline className="block aspect-[4/3] w-full object-cover" data-testid="scanner-video" />
         {!online ? (

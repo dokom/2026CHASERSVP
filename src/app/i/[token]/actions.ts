@@ -16,8 +16,13 @@ export type RsvpFormState = {
 
 const GENERIC_FAILURE =
   'We could not save your response. Please reload the page and try again.'
+const UNANSWERED = 'Please answer for everyone in your party.'
 
-/** Rebuilds the party from flat `guests.<i>.<field>` keys. */
+/**
+ * Rebuilds the party from flat `guests.<i>.<field>` keys. An unanswered seat
+ * comes back with `attending: undefined`, which the schema then refuses: a
+ * row nobody answered must never be recorded as a decline.
+ */
 function collectGuests(formData: FormData): unknown[] {
   const indices = new Set<number>()
   for (const key of formData.keys()) {
@@ -27,19 +32,13 @@ function collectGuests(formData: FormData): unknown[] {
 
   return [...indices].sort((a, b) => a - b).map((index) => {
     const read = (field: string) => String(formData.get(`guests.${index}.${field}`) ?? '')
-    const dietary = read('dietary')
+    const answer = read('attending')
     return {
       id: read('id') || undefined,
+      attending: answer === 'yes' ? true : answer === 'no' ? false : undefined,
+      mealOptionId: read('mealOptionId'),
       firstName: read('firstName'),
       lastName: read('lastName'),
-      badgeName: read('badgeName'),
-      company: read('company'),
-      title: read('title'),
-      email: read('email'),
-      phone: read('phone'),
-      mealOptionId: read('mealOptionId'),
-      accessibilityNeeds: read('accessibilityNeeds'),
-      dietary: dietary ? dietary.split(',').map((v) => v.trim()).filter(Boolean) : [],
     }
   })
 }
@@ -58,16 +57,16 @@ export async function submitRsvpAction(
   // written to access logs the way a query string is, and submitRsvp
   // re-resolves it against the stored hash rather than trusting it blindly.
   const token = String(formData.get('token') ?? '')
-  const attending = formData.get('attending') === 'yes'
 
   const parsed = rsvpSubmissionSchema.safeParse({
-    attending,
-    guests: attending ? collectGuests(formData) : [],
+    guests: collectGuests(formData),
     extraSeatsRequested: formData.get('extraSeatsRequested') ?? 0,
     extraSeatsReason: formData.get('extraSeatsReason') ?? '',
   })
   if (!parsed.success) {
-    return { status: 'error', message: parsed.error.issues[0]?.message ?? 'Please check your answers.' }
+    const issue = parsed.error.issues[0]
+    const message = issue?.path.at(-1) === 'attending' ? UNANSWERED : issue?.message ?? 'Please check your answers.'
+    return { status: 'error', message }
   }
 
   // The deadline is authoritative from the database. A client-supplied one
@@ -90,5 +89,5 @@ export async function submitRsvpAction(
   }
 
   revalidatePath(`/i/${token}`)
-  return { status: 'done', attending: parsed.data.attending }
+  return { status: 'done', attending: result.status !== 'DECLINED' }
 }

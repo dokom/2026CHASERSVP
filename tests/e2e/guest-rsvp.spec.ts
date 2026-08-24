@@ -1,11 +1,50 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+import { PrismaClient } from '@prisma/client'
+import { createInvite } from '../../src/lib/invites/repository'
 import { E2E_GUEST_TOKEN } from './global-setup'
+import { E2E_DATABASE_URL } from '../../playwright.config'
+
+/** A party nobody has answered for yet, so the test owns its whole state. */
+async function freshInviteToken(label: string): Promise<string> {
+  const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+  try {
+    const created = await createInvite(prisma, null, {
+      label,
+      seatsAllotted: 1,
+      primaryGuest: { firstName: 'Noor', lastName: 'Haddad' },
+    })
+    return created.token
+  } finally {
+    await prisma.$disconnect()
+  }
+}
 
 // Covers the unauthenticated /i/[token] guest portal: an anonymous visitor
-// with the right link sees their invitation, can accept or decline, and
-// nothing about the token itself leaks. See tests/e2e/global-setup.ts for
-// how E2E_GUEST_TOKEN is seeded — via createInvite(), the real path, not a
-// hand-rolled row.
+// with the right link sees their invitation, can say who is coming with a
+// couple of taps, and nothing about the token itself leaks. See
+// tests/e2e/global-setup.ts for how E2E_GUEST_TOKEN is seeded — via
+// createInvite(), the real path, not a hand-rolled row.
+
+// Not a locator .click() on the submit button: this submission is fast
+// enough that the button goes enabled -> disabled ("Sending…") -> unmounted
+// (replaced by the confirmation) inside the span of Playwright's own
+// actionability re-checks, so a simulated pointer click can spend its whole
+// retry budget chasing a target that keeps changing out from under it and
+// never resolve, even though the click that already landed genuinely worked.
+// requestSubmit() fires the exact same native submit React's action is bound
+// to, honoring the same validation a real click would, without racing the
+// button's own post-click state.
+async function confirm(page: Page) {
+  await expect(page.getByRole('button', { name: 'Confirm response' })).toBeEnabled()
+  await page.locator('form').evaluate((form) => (form as HTMLFormElement).requestSubmit())
+}
+
+/** Every seat in the party gets the same answer. */
+async function answerForEveryone(page: Page, answer: 'Coming' | 'Can’t make it') {
+  const chips = page.getByRole('radio', { name: answer })
+  const count = await chips.count()
+  for (let i = 0; i < count; i++) await chips.nth(i).check()
+}
 
 test.describe('guest RSVP', () => {
   test('an unknown token shows the not-found page, not a crash', async ({ page }) => {
@@ -27,60 +66,46 @@ test.describe('guest RSVP', () => {
     await expect(page.getByText(/You.re at/)).toBeVisible()
   })
 
-  test('accepts an RSVP for the whole party', async ({ page }) => {
+  test('nothing to type: the party is listed by name and Confirm waits for an answer', async ({ page }, testInfo) => {
+    // Its own invite: the shared fixture party may already carry an answer
+    // from whichever project's submission test ran first, and a remembered
+    // answer rightly enables Confirm.
+    const token = await freshInviteToken(`E2E Unanswered ${testInfo.project.name} ${Date.now()}`)
+    await page.goto(`/i/${token}`)
+    await expect(page.getByTestId('guest-response').first()).toContainText('Noor Haddad')
+    await expect(page.getByRole('textbox')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Confirm response' })).toBeDisabled()
+
+    await page.getByRole('radio', { name: 'Coming' }).check()
+    await expect(page.getByRole('button', { name: 'Confirm response' })).toBeEnabled()
+  })
+
+  test('accepts an RSVP for the whole party, including a companion', async ({ page }) => {
     await page.goto(`/i/${E2E_GUEST_TOKEN}`)
-    await page.getByLabel('Joyfully accepts').check()
-    await page.getByRole('button', { name: 'Continue' }).click() // -> who's coming
-    await page.getByLabel('First name').first().fill('Jordan')
-    await page.getByLabel('Last name').first().fill('Reyes')
-    await page.getByRole('button', { name: 'Continue' }).click() // -> extra seats
-    await page.getByRole('button', { name: 'Continue' }).click() // -> review
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '4')
-    await page.getByRole('button', { name: 'Continue' }).click() // -> confirm
-    // Not a locator .click(): this submission is fast enough that the
-    // button goes enabled -> disabled ("Sending…") -> unmounted (replaced
-    // by the confirmation) inside the span of Playwright's own
-    // actionability re-checks, so a simulated pointer click can spend its
-    // whole retry budget chasing a target that keeps changing out from
-    // under it and never resolve, even though the click that already
-    // landed genuinely worked (the confirmation renders regardless).
-    // requestSubmit() fires the exact same native submit React's action
-    // is bound to, honoring the same required-field validation a real
-    // click would, without racing the button's own post-click state.
-    await page.locator('form').evaluate((form) => (form as HTMLFormElement).requestSubmit())
+    await answerForEveryone(page, 'Coming')
+    // The fixture party has two seats and one known guest; the second seat is
+    // filled with a tap, no name required.
+    const bring = page.getByRole('button', { name: /Bring a guest/ })
+    if (await bring.isVisible()) await bring.click()
+    await confirm(page)
     await expect(page.getByTestId('rsvp-confirmed')).toContainText('look forward')
+  })
+
+  test('remembers the answer on a return visit', async ({ page }) => {
+    await page.goto(`/i/${E2E_GUEST_TOKEN}`)
+    await answerForEveryone(page, 'Coming')
+    await confirm(page)
+    await expect(page.getByTestId('rsvp-confirmed')).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByRole('radio', { name: 'Coming' }).first()).toBeChecked()
   })
 
   test('records a decline', async ({ page }) => {
     await page.goto(`/i/${E2E_GUEST_TOKEN}`)
-    await page.getByLabel('Regretfully declines').check()
-    // Declining skips steps 2-4: there is nothing to ask someone who is not coming.
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '5')
-    // Not a locator .click(): this submission is fast enough that the
-    // button goes enabled -> disabled ("Sending…") -> unmounted (replaced
-    // by the confirmation) inside the span of Playwright's own
-    // actionability re-checks, so a simulated pointer click can spend its
-    // whole retry budget chasing a target that keeps changing out from
-    // under it and never resolve, even though the click that already
-    // landed genuinely worked (the confirmation renders regardless).
-    // requestSubmit() fires the exact same native submit React's action
-    // is bound to, honoring the same required-field validation a real
-    // click would, without racing the button's own post-click state.
-    await page.locator('form').evaluate((form) => (form as HTMLFormElement).requestSubmit())
+    await answerForEveryone(page, 'Can’t make it')
+    await confirm(page)
     await expect(page.getByTestId('rsvp-confirmed')).toContainText('missed')
-  })
-
-  test('keeps entered details when the guest steps back', async ({ page }) => {
-    // Unmounting a step would silently discard input and drop the field from
-    // the submit; this is the test that catches it.
-    await page.goto(`/i/${E2E_GUEST_TOKEN}`)
-    await page.getByLabel('Joyfully accepts').check()
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByLabel('Company').first().fill('Northwind')
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByRole('button', { name: 'Back' }).click()
-    await expect(page.getByLabel('Company').first()).toHaveValue('Northwind')
   })
 
   test('serves a calendar file', async ({ page }) => {
@@ -114,8 +139,7 @@ test.describe('guest RSVP', () => {
     // error message in the response state), not an HTTP status code —
     // submitRsvpAction returns `{status:'error'}` rather than throwing.
     await page.goto(`/i/${E2E_GUEST_TOKEN}`)
-    await page.getByLabel('Regretfully declines').check()
-    await page.getByRole('button', { name: 'Continue' }).click()
+    await answerForEveryone(page, 'Can’t make it')
 
     await page.route('**/i/**', async (route) => {
       const request = route.request()
@@ -132,16 +156,7 @@ test.describe('guest RSVP', () => {
       await route.continue({ postData: tampered })
     })
 
-    // Not a locator .click() on the submit button: this submission is fast
-    // enough that the button goes enabled -> disabled ("Sending…") ->
-    // unmounted (replaced by the confirmation) inside the span of
-    // Playwright's own actionability re-checks, so a simulated pointer
-    // click can spend its whole retry budget chasing a target that keeps
-    // changing out from under it and never resolve, even though the click
-    // that already landed genuinely worked. requestSubmit() fires the same
-    // native submit React's action is bound to, without racing the
-    // button's own post-click state.
-    await page.locator('form').evaluate((form) => (form as HTMLFormElement).requestSubmit())
+    await confirm(page)
     // Next.js also renders a hidden route-announcer div with role="alert" on
     // every page (for accessibility route-change announcements), so the
     // locator must be scoped to the element carrying the actual message.

@@ -15,15 +15,12 @@ export default async function CheckinPage() {
   if (!csrf) throw new Error('CSRF cookie missing — check that src/proxy.ts matches this route')
   const progress = await checkInProgress(prisma)
 
+  // The "N of M arrived" counter lives inside Scanner: it is the component
+  // that knows when a tap lands, so it can keep the count honest without a
+  // reload. This server read is only its starting point.
   return (
     <section className="space-y-6">
-      <div className="flex items-baseline justify-between">
-        <h1 className="font-serif text-2xl">Check-in</h1>
-        <p className="text-sm text-[var(--text-muted)]" data-testid="checkin-progress">
-          {progress.checkedIn} of {progress.attending} arrived
-        </p>
-      </div>
-      <Scanner csrf={csrf} appUrl={getEnv().APP_URL} />
+      <Scanner csrf={csrf} appUrl={getEnv().APP_URL} initialProgress={progress} />
     </section>
   )
 }

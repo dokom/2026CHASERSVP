@@ -155,13 +155,8 @@ test.describe('motion safety rails', () => {
 
   test('the RSVP still works end to end with motion on', async ({ page }) => {
     await page.goto(url)
-    await page.getByLabel('Joyfully accepts').check()
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByLabel('First name').first().fill('Jordan')
-    await page.getByLabel('Last name').first().fill('Reyes')
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByRole('button', { name: 'Continue' }).click()
+    await page.getByRole('radio', { name: 'Coming' }).first().check()
+    await expect(page.getByRole('button', { name: 'Confirm response' })).toBeEnabled()
     await page.locator('form').first().evaluate((f: HTMLFormElement) => f.requestSubmit())
     await expect(page.getByTestId('rsvp-confirmed')).toContainText('look forward')
     await expect(page.locator('[data-sealed]')).toHaveCount(1)

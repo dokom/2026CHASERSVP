@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
-export const MAX_DIETARY_ENTRIES = 12
 export const MAX_NOTE_LENGTH = 1000
+const MAX_NAME_LENGTH = 80
 /** No invite may exceed 20 seats; 40 leaves headroom for an approved extra-seat request. */
 const MAX_GUESTS_PER_SUBMISSION = 40
 const MAX_EXTRA_SEATS = 20
@@ -9,32 +9,28 @@ const MAX_EXTRA_SEATS = 20
 const objectId = z.string().regex(/^[0-9a-f]{24}$/, 'Not a valid identifier')
 const optionalText = (max: number) => z.string().trim().max(max).optional().or(z.literal(''))
 
-export const guestEntrySchema = z.object({
+/**
+ * One seat's answer: coming or not, and a meal if coming.
+ *
+ * The guest never types contact details here. Names, company and email come
+ * from the organiser's import and an RSVP leaves them alone. A name is
+ * accepted only for a companion the guest adds themselves, and even that is
+ * optional — it defaults to "Guest of <host>".
+ */
+export const guestResponseSchema = z.object({
   id: objectId.optional(),
-  firstName: z.string().trim().min(1, 'First name is required').max(80),
-  lastName: z.string().trim().min(1, 'Last name is required').max(80),
-  badgeName: optionalText(80),
-  company: optionalText(160),
-  title: optionalText(160),
-  email: z.string().trim().toLowerCase().email('Enter a valid email').optional().or(z.literal('')),
-  phone: optionalText(40),
+  attending: z.boolean(),
   mealOptionId: objectId.optional().or(z.literal('')),
-  dietary: z.array(z.string().trim().min(1).max(120)).max(MAX_DIETARY_ENTRIES).default([]),
-  accessibilityNeeds: optionalText(MAX_NOTE_LENGTH),
+  firstName: optionalText(MAX_NAME_LENGTH),
+  lastName: optionalText(MAX_NAME_LENGTH),
 })
 
-export type GuestEntry = z.infer<typeof guestEntrySchema>
+export type GuestResponse = z.infer<typeof guestResponseSchema>
 
-export const rsvpSubmissionSchema = z
-  .object({
-    attending: z.coerce.boolean(),
-    guests: z.array(guestEntrySchema).max(MAX_GUESTS_PER_SUBMISSION),
-    extraSeatsRequested: z.coerce.number().int().min(0).max(MAX_EXTRA_SEATS).default(0),
-    extraSeatsReason: optionalText(MAX_NOTE_LENGTH),
-  })
-  .refine((value) => !value.attending || value.guests.length > 0, {
-    message: 'Tell us who is coming',
-    path: ['guests'],
-  })
+export const rsvpSubmissionSchema = z.object({
+  guests: z.array(guestResponseSchema).min(1, 'Tell us who is coming').max(MAX_GUESTS_PER_SUBMISSION),
+  extraSeatsRequested: z.coerce.number().int().min(0).max(MAX_EXTRA_SEATS).default(0),
+  extraSeatsReason: optionalText(MAX_NOTE_LENGTH),
+})
 
 export type RsvpSubmission = z.infer<typeof rsvpSubmissionSchema>

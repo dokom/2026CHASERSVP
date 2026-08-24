@@ -91,7 +91,16 @@ export function FoilScene({ scheme }: { scheme: ColorScheme }) {
     const canvas = canvasRef.current
     if (!canvas) return undefined
 
-    const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'low-power' })
+    // No usable WebGL — disabled, a blocklisted GPU, or a context this canvas
+    // already lost — throws from inside Three's constructor. The hero is
+    // decoration: log it and render nothing rather than take the page down.
+    let renderer: WebGLRenderer
+    try {
+      renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'low-power' })
+    } catch (error) {
+      console.warn('Foil hero disabled: WebGL is unavailable on this device', error)
+      return undefined
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
 
     const scene = new Scene()
@@ -163,7 +172,10 @@ export function FoilScene({ scheme }: { scheme: ColorScheme }) {
       // dispose() alone frees Three's own GPU resources but leaves the
       // underlying WebGL context alive; without forcing its loss here the
       // context leaks across client-side navigations between guest pages.
-      renderer.forceContextLoss()
+      // Only once the canvas has really left the document, though: React's
+      // dev-mode StrictMode re-runs this effect on the SAME canvas, and a
+      // context lost here can never be re-acquired by the next renderer.
+      if (!canvas.isConnected) renderer.forceContextLoss()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scene setup/teardown runs once; scheme changes are applied by the effect below
   }, [])
