@@ -122,20 +122,16 @@ test.describe('accessibility — keyboard-only RSVP', () => {
     desktopOnly(testInfo)
     await page.goto(`/i/${token}`)
 
-    // The party is listed by name; nothing is typed. The chips are real
-    // radios (visually hidden inputs inside styled labels), so Tab lands on
-    // the unchecked group, Space checks the first option, and Tab then
-    // moves past the whole group (native roving-tabindex behaviour).
-    await expect(page.getByTestId('guest-response').first()).toContainText('Sasha Vale')
-    const coming = page.getByRole('radio', { name: 'Coming' }).first()
-    await tabTo(page, coming)
+    // The party is listed by name; nothing is typed. Each name is a real
+    // <button aria-pressed>, so Tab reaches it and Space toggles it.
+    const me = page.getByTestId('guest-response').first()
+    await expect(me).toContainText('Sasha Vale')
+    await expect(me).toHaveAttribute('aria-pressed', 'false')
+    await tabTo(page, me)
     await page.keyboard.press('Space')
-    await expect(coming).toBeChecked()
+    await expect(me).toHaveAttribute('aria-pressed', 'true')
 
-    // Confirm is disabled until every seat has an answer; on this
-    // single-seat invite one answer is enough, and Enter submits.
     const confirm = page.getByRole('button', { name: 'Confirm response' })
-    await expect(confirm).toBeEnabled()
     await tabTo(page, confirm)
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('rsvp-confirmed')).toContainText('look forward')

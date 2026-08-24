@@ -1,44 +1,44 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { CompanionRow, KnownGuestRow } from '@/components/guest/guest-response-row'
+import { GuestToggle } from '@/components/guest/guest-toggle'
 import { Sealed } from '@/components/motion/sealed'
 import type { GuestInvite } from '@/lib/guest/resolve'
-import type { MealOptionRow } from '@/lib/events/repository'
 import { submitRsvpAction, type RsvpFormState } from './actions'
 
 const INITIAL: RsvpFormState = { status: 'idle' }
 
-type Answers = Readonly<Record<number, boolean>>
+type Selection = Readonly<Record<number, boolean>>
 
-/** A guest who already answered sees their previous answer selected. */
-function previousAnswers(invite: GuestInvite): Answers {
-  return Object.fromEntries(
-    invite.guests.flatMap((guest, index) => (guest.attending === null ? [] : [[index, guest.attending]])),
-  )
+/** Whoever already said yes comes back highlighted; everyone else starts off. */
+function previousSelection(invite: GuestInvite): Selection {
+  return Object.fromEntries(invite.guests.map((guest, index) => [index, guest.attending === true]))
+}
+
+function toggled(selection: Selection, index: number): Selection {
+  return { ...selection, [index]: !selection[index] }
 }
 
 /**
- * Select and confirm: one chip per person, a meal if they're coming, done.
- * Nothing to type. Contact details stay whatever the organiser imported.
+ * Tap the names of everyone who is coming, then confirm. Nothing to type.
+ * Contact details stay whatever the organiser imported; a spare seat can be
+ * taken by an unnamed companion ("Guest of <host>") with one tap.
  */
 export function RsvpForm({
-  token, invite, mealOptions, csrf,
+  token, invite, csrf,
 }: {
   token: string
   invite: GuestInvite
-  mealOptions: MealOptionRow[]
   csrf: string
 }) {
   const [state, action, pending] = useActionState(submitRsvpAction, INITIAL)
-  const [answers, setAnswers] = useState<Answers>(() => previousAnswers(invite))
+  const [selection, setSelection] = useState<Selection>(() => previousSelection(invite))
   // Seats the guest is filling on this visit, beyond the party already known.
   const [companions, setCompanions] = useState(0)
 
   const known = invite.guests
   const host = known.find((guest) => guest.isPrimary) ?? known[0]
   const seatsRemaining = invite.seatsAllotted - known.length - companions
-  const everyoneAnswered = known.every((_, index) => answers[index] !== undefined)
 
   if (state.status === 'done') {
     // Shared between the visible text and data-shimmer-text: the CSS
@@ -61,37 +61,44 @@ export function RsvpForm({
     )
   }
 
+  const addCompanion = () => {
+    setSelection((current) => ({ ...current, [known.length + companions]: true }))
+    setCompanions((current) => current + 1)
+  }
+
   return (
     <form action={action} className="space-y-6">
       <input type="hidden" name="csrf" value={csrf} />
       <input type="hidden" name="token" value={token} />
 
       <p className="text-[var(--color-text-muted)]">
-        {known.length > 1 ? 'Let us know who from your party will be joining us.' : 'Let us know if you will be joining us.'}
+        {known.length + companions > 1 ? 'Tap everyone who is coming, then confirm.' : 'Tap your name if you are coming, then confirm.'}
       </p>
 
-      <ul className="space-y-3">
+      <ul className="space-y-2">
         {known.map((guest, index) => (
           <li key={guest.id}>
-            <KnownGuestRow
+            <GuestToggle
               index={index}
-              guest={guest}
-              answer={answers[index]}
-              onAnswer={(attending) => setAnswers((current) => ({ ...current, [index]: attending }))}
-              mealOptions={mealOptions}
+              id={guest.id}
+              name={`${guest.firstName} ${guest.lastName}`.trim()}
+              note={guest.isPrimary ? '(you)' : undefined}
+              selected={selection[index] === true}
+              onToggle={() => setSelection((current) => toggled(current, index))}
             />
           </li>
         ))}
         {Array.from({ length: companions }, (_, offset) => {
           const index = known.length + offset
-          const isLast = offset === companions - 1
           return (
             <li key={index}>
-              <CompanionRow
+              <GuestToggle
                 index={index}
-                hostFirstName={host?.firstName ?? 'the host'}
-                mealOptions={mealOptions}
-                onRemove={isLast ? () => setCompanions((current) => current - 1) : null}
+                id={null}
+                name={`Guest of ${host?.firstName ?? 'the host'}`}
+                note={`(seat ${index + 1})`}
+                selected={selection[index] === true}
+                onToggle={() => setSelection((current) => toggled(current, index))}
               />
             </li>
           )
@@ -101,7 +108,7 @@ export function RsvpForm({
       {seatsRemaining > 0 ? (
         <button
           type="button"
-          onClick={() => setCompanions((current) => current + 1)}
+          onClick={addCompanion}
           className="rounded border border-[var(--color-border)] px-4 py-2 text-sm"
         >
           Bring a guest ({seatsRemaining} seat{seatsRemaining === 1 ? '' : 's'} remaining)
@@ -114,7 +121,7 @@ export function RsvpForm({
 
       <button
         type="submit"
-        disabled={pending || !everyoneAnswered}
+        disabled={pending}
         className="rounded bg-[var(--color-brass)] px-6 py-3 font-medium text-[var(--color-ink-deep)] disabled:opacity-60"
       >
         {pending ? 'Sending…' : 'Confirm response'}

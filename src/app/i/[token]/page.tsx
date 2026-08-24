@@ -121,7 +121,7 @@ export default async function GuestPage({
         <section aria-labelledby="rsvp" className="relative z-10 space-y-4 pl-12">
           <h2 id="rsvp" className="font-serif text-3xl">Your response</h2>
           {window.isOpen ? (
-            <RsvpForm token={token} invite={invite} mealOptions={event.mealOptions} csrf={csrf} />
+            <RsvpForm token={token} invite={invite} csrf={csrf} />
           ) : (
             <p role="status" className="rounded border border-[var(--color-border)] p-4">
               RSVPs closed on{' '}

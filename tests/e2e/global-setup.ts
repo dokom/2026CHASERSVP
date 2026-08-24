@@ -138,6 +138,22 @@ export default async function globalSetup(): Promise<void> {
     const startsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     const rsvpDeadline = new Date(startsAt.getTime() - 24 * 60 * 60 * 1000)
 
+    // A floorplan, so the guest page renders its seat map (and the
+    // click-to-fullscreen test has something to click). The smallest valid
+    // PNG there is: one transparent pixel, stretched by the page's own CSS.
+    const floorplan = await prisma.mediaAsset.create({
+      data: {
+        filename: 'e2e-floorplan.png',
+        mimeType: 'image/png',
+        bytes: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+          'base64',
+        ),
+        width: 1,
+        height: 1,
+      },
+    })
+
     const event = await prisma.event.create({
       data: {
         name: 'The Grand Gala',
@@ -148,6 +164,7 @@ export default async function globalSetup(): Promise<void> {
         address: '123 Fifth Avenue, New York, NY',
         dressCode: 'Black tie',
         rsvpDeadline,
+        floorplanAssetId: floorplan.id,
       },
     })
 
