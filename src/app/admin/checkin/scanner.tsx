@@ -252,7 +252,7 @@ export function Scanner({ csrf, appUrl, initialProgress }: { csrf: string; appUr
           <span className="absolute left-3 top-3 rounded bg-[var(--danger)] px-2 py-1 text-xs text-white">Offline</span>
         ) : null}
         {queue.length > 0 ? (
-          <span className="absolute right-3 top-3 rounded bg-[var(--brass)] px-2 py-1 text-xs text-[var(--on-brass)]" data-testid="unsynced-count">
+          <span className="absolute right-3 top-3 rounded bg-[var(--accent)] px-2 py-1 text-xs text-[var(--on-accent)]" data-testid="unsynced-count">
             {queue.length} to sync
           </span>
         ) : null}
@@ -283,7 +283,7 @@ export function Scanner({ csrf, appUrl, initialProgress }: { csrf: string; appUr
           type="button"
           disabled={!mounted}
           onClick={() => void resolve(linkInputRef.current?.value ?? '')}
-          className="min-h-12 rounded bg-[var(--brass)] px-4 font-medium text-[var(--on-brass)] disabled:opacity-60"
+          className="min-h-12 rounded bg-[var(--accent)] px-4 font-medium text-[var(--on-accent)] disabled:opacity-60"
         >
           Find
         </button>

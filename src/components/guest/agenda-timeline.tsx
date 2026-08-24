@@ -24,7 +24,7 @@ export function AgendaTimeline({
         <li key={item.id} className="relative">
           <span
             aria-hidden="true"
-            className="absolute -left-[1.6rem] top-2 h-2 w-2 rounded-full bg-[var(--color-brass)]"
+            className="absolute -left-[1.6rem] top-2 h-2 w-2 rounded-full bg-[var(--color-accent)]"
           />
           <time
             dateTime={item.startsAt.toISOString()}

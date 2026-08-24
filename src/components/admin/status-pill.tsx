@@ -8,7 +8,7 @@ const STYLES: Record<InviteStatus, string> = {
   PENDING: 'border-[var(--color-border)] text-[var(--color-text-muted)]',
   ATTENDING: 'border-[var(--color-success)] text-[var(--success-ink)]',
   DECLINED: 'border-[var(--color-danger)] text-[var(--danger-ink)]',
-  PARTIAL: 'border-[var(--color-brass)] text-[var(--brass-ink)]',
+  PARTIAL: 'border-[var(--color-accent)] text-[var(--accent-ink)]',
 }
 
 export function StatusPill({ status }: { status: InviteStatus }) {

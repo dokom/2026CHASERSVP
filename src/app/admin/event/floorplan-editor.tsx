@@ -65,7 +65,7 @@ export function FloorplanEditor({
             {markers.map((marker) => (
               <span
                 key={marker.id}
-                className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-brass)] text-[10px] font-bold text-[var(--color-ink-deep)]"
+                className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-accent)] text-[10px] font-bold text-[var(--on-accent)]"
                 style={{ left: `${marker.x * 100}%`, top: `${marker.y * 100}%` }}
                 title={`Table ${marker.tableNumber}`}
               >
@@ -74,7 +74,7 @@ export function FloorplanEditor({
             ))}
             {pending ? (
               <span
-                className="absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed border-[var(--color-brass)]"
+                className="absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed border-[var(--color-accent)]"
                 style={{ left: `${pending.x * 100}%`, top: `${pending.y * 100}%` }}
                 data-testid="pending-marker"
               />
@@ -95,7 +95,7 @@ export function FloorplanEditor({
                   className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
                 />
               </label>
-              <button type="submit" className="rounded bg-[var(--color-brass)] px-4 py-2 font-medium text-[var(--color-ink-deep)]">
+              <button type="submit" className="rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]">
                 Place table
               </button>
               <button type="button" onClick={() => setPending(null)} className="text-sm underline underline-offset-4">

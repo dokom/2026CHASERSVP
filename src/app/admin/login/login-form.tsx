@@ -15,7 +15,7 @@ export function LoginForm({ csrf, children }: { csrf: string; children: React.Re
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded bg-[var(--color-brass)] px-4 py-2 font-medium text-[var(--color-ink-deep)] disabled:opacity-60"
+        className="w-full rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)] disabled:opacity-60"
       >
         {pending ? 'Signing in…' : 'Sign in'}
       </button>

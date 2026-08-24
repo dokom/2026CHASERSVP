@@ -62,7 +62,7 @@ export default async function EventPage({
         <Field label="Venue" name="venueName" defaultValue={event?.venueName ?? ''} required />
         <Field label="Address" name="address" defaultValue={event?.address ?? ''} required />
         <Field label="Dress code" name="dressCode" defaultValue={event?.dressCode ?? ''} />
-        <button type="submit" className="self-end rounded bg-[var(--color-brass)] px-4 py-2 font-medium text-[var(--color-ink-deep)]">
+        <button type="submit" className="self-end rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]">
           Save event
         </button>
       </form>

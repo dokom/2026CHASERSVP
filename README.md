@@ -76,9 +76,9 @@ route redirects a STAFF session back to it.
 
 ## Going live
 
-Work through this checklist before the first real invitation goes out:
+The runbook for the production host — Cloudflare, TLS on 443, autostart — is [docs/DEPLOY.md](docs/DEPLOY.md). Work through this checklist before the first real invitation goes out:
 
-1. **Host MongoDB as a real replica set.** A managed service (Atlas, or any
+1. **Host MongoDB as a real replica set.** This deployment runs the project-local single-node replica set on the origin host itself (`npm run db:start`, see `docs/DEPLOY.md`); a managed service (Atlas, or any
    MongoDB 8 deployment with `replicaSet` configured) — Prisma's
    transactions require it; a standalone `mongod` will not work in
    production any more than it does locally.
@@ -110,6 +110,7 @@ Work through this checklist before the first real invitation goes out:
 | `npm run typecheck` | TypeScript, no emit |
 | `npm run lint` | ESLint 9 flat config (`eslint-config-next` + TypeScript). Run in CI after typecheck. |
 | `npm run build` | Production build (`prisma generate && next build`) |
+| `npm run serve` | Production origin server: HTTPS on 443 with the certificate in `ssl/` (see `docs/DEPLOY.md`) |
 | `npm run db:start` | Local single-node MongoDB replica set on port 27018 |
 | `npm run db:push` | Sync the Prisma schema to `DATABASE_URL` |
 | `npm run db:seed` | Idempotent seed (owner account, sample event, sample invites) |
@@ -156,7 +157,7 @@ you rotate casually.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull
+`.github/workflows/ci.yml` runs on every push to `master` and every pull
 request: `npm ci`, start and initiate a single-node MongoDB replica set,
 push the Prisma schema to the app and integration-test databases,
 `npm run typecheck`, `npm run test:coverage` (the 80% coverage gate),
@@ -173,3 +174,4 @@ run, not just on failure. On E2E failure, `playwright-report/` and
 
 - Design: `docs/superpowers/specs/2026-08-21-gala-rsvp-portal-design.md`
 - Plan: `docs/superpowers/plans/2026-08-21-foundation-and-admin-backend.md`
+- Deployment runbook: `docs/DEPLOY.md`

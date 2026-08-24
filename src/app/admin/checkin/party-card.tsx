@@ -19,7 +19,7 @@ export function PartyCard({
     <section aria-labelledby="party-heading" className="space-y-3">
       <h2 id="party-heading" className="font-serif text-2xl">
         {party.label}
-        {party.tableNumber ? <span className="ml-3 text-[var(--brass-ink)]">Table {party.tableNumber}</span> : null}
+        {party.tableNumber ? <span className="ml-3 text-[var(--accent-ink)]">Table {party.tableNumber}</span> : null}
       </h2>
       <ul className="space-y-2">
         {party.guests.map((guest) => {
@@ -32,7 +32,7 @@ export function PartyCard({
                 onClick={() => (arrived ? onUndo(guest) : onCheckIn(guest))}
                 aria-pressed={arrived}
                 className={`flex min-h-14 w-full items-center justify-between rounded-lg border px-4 py-3 text-left ${
-                  arrived ? 'border-[var(--brass)] bg-[var(--surface)]' : 'border-[var(--color-border)]'
+                  arrived ? 'border-[var(--accent)] bg-[var(--surface)]' : 'border-[var(--color-border)]'
                 }`}
               >
                 <span>
@@ -45,7 +45,7 @@ export function PartyCard({
                 <span className="text-right text-sm">
                   {arrived ? (
                     <>
-                      <span className="block text-[var(--brass-ink)]">✓ {formatTime(guest.checkedInAt!.toString())}</span>
+                      <span className="block text-[var(--accent-ink)]">✓ {formatTime(guest.checkedInAt!.toString())}</span>
                       <span className="block text-xs text-[var(--text-muted)]">{queued ? 'will sync' : 'tap to undo'}</span>
                     </>
                   ) : (

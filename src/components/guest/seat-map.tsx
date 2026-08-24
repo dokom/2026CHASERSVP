@@ -2,7 +2,7 @@ import type { TableMarkerRow } from '@/lib/events/repository'
 import { SeatMapViewer } from './seat-map-viewer'
 
 const MARKER =
-  'absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--color-ink-deep)] bg-[var(--color-brass)] seat-pulse'
+  'absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--on-accent)] bg-[var(--color-accent)] seat-pulse'
 
 /**
  * The plan plus the guest's marker. Marker coordinates are normalised 0–1
@@ -58,7 +58,7 @@ export function SeatMap({
   return (
     <div className="space-y-4">
       <p className="font-serif text-2xl">
-        You&rsquo;re at <span className="text-[var(--brass-ink)]">Table {table}</span>
+        You&rsquo;re at <span className="text-[var(--accent-ink)]">Table {table}</span>
       </p>
 
       {floorplanAssetId ? (

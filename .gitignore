@@ -9,3 +9,6 @@ playwright-report/
 next-env.d.ts
 *.tsbuildinfo
 .mongo/
+
+# TLS material for the origin server: never in git
+ssl/

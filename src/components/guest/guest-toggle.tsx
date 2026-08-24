@@ -1,7 +1,7 @@
 const ROW =
   'flex min-h-14 w-full items-center justify-between gap-4 rounded-lg border px-4 py-3 text-left transition-colors ' +
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brass)] focus-visible:ring-offset-2'
-const SELECTED = 'border-[var(--color-brass)] bg-[var(--color-brass)] text-[var(--color-ink-deep)]'
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2'
+const SELECTED = 'border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--on-accent)]'
 const UNSELECTED = 'border-[var(--color-border)] text-[var(--color-text)]'
 
 /**
@@ -34,7 +34,9 @@ export function GuestToggle({ index, id, name, note, selected, onToggle }: {
       >
         <span className="font-serif text-xl">
           {name}
-          {note ? <span className="ml-2 font-sans text-sm opacity-70">{note}</span> : null}
+          {/* No opacity here: the row's own text colour is the verified one,
+              and white at 70% on the red fill drops to 2.9:1. */}
+          {note ? <span className="ml-2 font-sans text-sm">{note}</span> : null}
         </span>
         <span className="shrink-0 text-sm">{selected ? '✓ Coming' : 'Not coming'}</span>
       </button>

@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { Field } from '@/components/admin/field'
+import { BrandMark } from '@/components/brand-mark'
 import { CSRF_COOKIE } from '@/lib/auth/csrf'
 import { getCurrentUser } from '@/lib/auth/guard'
 import { landingPathFor } from '@/lib/auth/roles'
@@ -20,7 +21,8 @@ export default async function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
-      <h1 className="mb-8 font-serif text-3xl text-[var(--brass-ink)]">Gala Admin</h1>
+      <BrandMark size="lg" className="mb-6" />
+      <h1 className="mb-8 font-serif text-3xl text-[var(--accent-ink)]">Gala 2026 Admin</h1>
       <LoginForm csrf={csrf}>
         <Field label="Email" name="email" type="email" required autoComplete="username" />
         <Field label="Password" name="password" type="password" required autoComplete="current-password" />

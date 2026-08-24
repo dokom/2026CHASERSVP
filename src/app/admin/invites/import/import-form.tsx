@@ -52,7 +52,7 @@ export function ImportForm({ csrf }: { csrf: string }) {
               <input type="hidden" name="payload" value={state.payload} />
               <button
                 type="submit"
-                className="rounded bg-[var(--color-brass)] px-4 py-2 font-medium text-[var(--color-ink-deep)]"
+                className="rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
               >
                 Import {readyCount} invite{readyCount === 1 ? '' : 's'}
               </button>

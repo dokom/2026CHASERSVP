@@ -2,35 +2,37 @@
 
 /* ------------------------------------------------------------------ tokens */
 :root {
-  /* Literal palette. These never change with theme — they are colours, not
-     roles. --brass is a FILL colour (buttons, progress, marker, dots, focus
-     ring) and stays this exact hex in both schemes by design. */
-  --ink:       #0B0F1F;
-  --midnight:  #141A33;
-  --brass:     #C9A24D;
-  --brass-dim: #8C6F2F;
-  --bone:      #EFE9DC;
-  --mist:      #8B90A6;
-  --danger:    #D9604F;
-  --success:   #7FB98F;
-  /* Label colour on a brass FILL. Brass is dark-ish in both schemes, so the
-     label is always this near-black — never scheme-dependent. */
-  --on-brass:  #0B0F1F;
+  /* Literal palette, taken from the CHASE wordmark (public/chaselogo.svg):
+     the red is the accent FILL (buttons, marker, highlights, focus ring) and
+     stays this exact hex in both schemes; the navy is the brand blue pushed
+     down to a ground colour. These never change with theme — they are
+     colours, not roles. */
+  --chase-red:   #E00E0F;
+  --chase-blue:  #0171BD;
+  --ink:         #08192B;
+  --midnight:    #0F2A47;
+  --accent:      var(--chase-red);
+  --accent-dim:  #A10A0B;
+  --paper:       #F3F6FA;
+  --mist:        #9AA9BD;
+  --danger:      #FF7A6B;
+  --success:     #7FD39A;
+  /* Label colour on the accent FILL. White on the red is 4.95:1 (verified)
+     where a dark label would fail, so it is never scheme-dependent. */
+  --on-accent:   #FFFFFF;
 
   /* Semantic roles. These DO change with theme; redefined below per scheme.
      Defaults here are the dark (ground) state. */
   --ground:     var(--ink);
   --surface:    var(--midnight);
-  --text:       var(--bone);
+  --text:       var(--paper);
   --text-muted: var(--mist);
-  /* Brass as TEXT (the guest's name, "Table N"). Brass-the-fill is ~1.9:1 on
-     the light ground, so text uses a darker brass instead of the fill hex. */
-  --brass-ink:  var(--brass);
-  /* Same reasoning as --brass-ink: --danger/--success as TEXT (status pill
-     labels) is only ~3.19:1 / ~1.98:1 on the light ground — below the 4.5:1
-     WCAG AA floor — so text uses darker ink variants; borders keep the
-     literal fill colour, since non-text UI contrast has a lower 3:1 floor
-     that the fill hues already clear. */
+  /* The accent as TEXT (the guest's name, "Table N"). The fill red is only
+     3.58:1 on the navy ground, so text uses a lifted red: 6.39:1 verified. */
+  --accent-ink: #FF6B6B;
+  /* The brand blue as TEXT (eyebrows, secondary emphasis). 9.27:1 verified. */
+  --blue-ink:   #7CC3F5;
+  /* --danger/--success as TEXT: 6.96:1 / 9.87:1 on the navy ground. */
   --danger-ink: var(--danger);
   --success-ink: var(--success);
 
@@ -43,66 +45,65 @@
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Aliases the admin screens already reference. Point at the semantic roles
-     (not the literal colours) so admin surfaces track the active scheme. */
+  /* Aliases the admin screens reference. Point at the semantic roles (not
+     the literal colours) so admin surfaces track the active scheme. */
   --color-ink: var(--surface);
-  --color-ink-deep: var(--on-brass);
   --color-bone: var(--text);
-  --color-brass: var(--brass);
-  --color-brass-dim: var(--brass-dim);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
   --color-surface: var(--surface);
-  --color-border: #2A3150;
+  --color-border: #213B5C;
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
   --color-danger: var(--danger);
   --color-success: var(--success);
 }
 
-/* Light theme is a designed theme, not an inversion: warm bone ground, same
-   brass fills. Only the semantic roles move — the literal colours above
-   never do, so their names never mean their opposite. */
+/* Light theme is a designed theme, not an inversion: cool white ground (the
+   wordmark lives on white), same red fills. Only the semantic roles move —
+   the literal colours above never do, so their names never mean their
+   opposite. Every text value below is verified ≥ 4.5:1 on both #F6F8FB and
+   #FFFFFF. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --ground:     #F4EFE4;
+    --ground:     #F6F8FB;
     --surface:    #FFFFFF;
-    --text:       #161A2B;
-    --text-muted: #5B6078;
-    /* ~5.54:1 against #F4EFE4 — verified, exceeds the 4.5:1 floor. */
-    --brass-ink:  #7A5A12;
-    /* ~5.18:1 against #F4EFE4 / ~5.94:1 against #FFFFFF — verified. */
-    --danger-ink: #B23A2E;
-    /* ~6.01:1 against #F4EFE4 / ~6.89:1 against #FFFFFF — verified. */
-    --success-ink: #276639;
-    --color-border: #D9D2C2;
+    --text:       #101A2B;
+    --text-muted: #4F5D73;
+    --accent-ink: #A10A0B;   /* 7.70:1 */
+    --blue-ink:   #0A4F87;   /* 7.96:1 */
+    --danger-ink: #B23A2E;   /* 5.58:1 */
+    --success-ink: #276639;  /* 6.48:1 */
+    --color-border: #D3DBE6;
   }
 }
 :root[data-theme="dark"] {
   --ground:     var(--ink);
   --surface:    var(--midnight);
-  --text:       var(--bone);
+  --text:       var(--paper);
   --text-muted: var(--mist);
-  --brass-ink:  var(--brass);
+  --accent-ink: #FF6B6B;
+  --blue-ink:   #7CC3F5;
   --danger-ink: var(--danger);
   --success-ink: var(--success);
-  --color-border: #2A3150;
+  --color-border: #213B5C;
 }
 /* Mirrors the `prefers-color-scheme: light` block above exactly. Needed
    because MotionProvider honours an explicit data-theme="light" choice even
-   when the OS itself prefers dark — without this block, that visitor's
-   media query never matches (`prefers-color-scheme: light` is false), so
-   they would silently fall through to the dark :root defaults, right where
-   the foil flecks are colour-blended for a light ground. Same source-order
+   when the OS itself prefers dark — without this block, that visitor would
+   silently fall through to the dark :root defaults. Same source-order
    placement as [data-theme="dark"] above so the explicit attribute always
    wins over the media query. */
 :root[data-theme="light"] {
-  --ground:     #F4EFE4;
+  --ground:     #F6F8FB;
   --surface:    #FFFFFF;
-  --text:       #161A2B;
-  --text-muted: #5B6078;
-  --brass-ink:  #7A5A12;
+  --text:       #101A2B;
+  --text-muted: #4F5D73;
+  --accent-ink: #A10A0B;
+  --blue-ink:   #0A4F87;
   --danger-ink: #B23A2E;
   --success-ink: #276639;
-  --color-border: #D9D2C2;
+  --color-border: #D3DBE6;
 }
 
 /* ------------------------------------------------------------------- base */
@@ -136,7 +137,7 @@ body {
   font-size: var(--text-eyebrow);
   font-variant-caps: all-small-caps;
   letter-spacing: 0.22em;
-  color: var(--text-muted);
+  color: var(--blue-ink);
 }
 
 /* --------------------------------------------------------- reduced motion */
@@ -165,7 +166,7 @@ body {
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  border: 2px solid var(--brass);
+  border: 2px solid var(--accent);
   animation: seat-pulse-ring 2.4s ease-out infinite;
   pointer-events: none;
 }
@@ -189,7 +190,7 @@ body {
   position: absolute;
   inset: 0;
   padding: inherit;
-  background: linear-gradient(100deg, transparent 40%, var(--brass) 50%, transparent 60%);
+  background: linear-gradient(100deg, transparent 40%, var(--accent) 50%, transparent 60%);
   background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -200,6 +201,6 @@ body {
 
 /* Visible keyboard focus everywhere, in brass. */
 :focus-visible {
-  outline: 2px solid var(--brass);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }

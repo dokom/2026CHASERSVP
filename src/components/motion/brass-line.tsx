@@ -151,20 +151,20 @@ export function BrassLine() {
         ref={pathRef}
         d={geometry.d}
         fill="none"
-        stroke="var(--brass-dim)"
+        stroke="var(--accent-dim)"
         strokeWidth={1.25}
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
       {/* The line closes into a seal again, not a dangling end. */}
       <g data-brass-terminal-seal>
-        <circle cx={geometry.end.x} cy={geometry.end.y} r={TERMINAL_SEAL_RADIUS - 2} fill="var(--brass)" />
+        <circle cx={geometry.end.x} cy={geometry.end.y} r={TERMINAL_SEAL_RADIUS - 2} fill="var(--accent)" />
         <circle
           cx={geometry.end.x}
           cy={geometry.end.y}
           r={TERMINAL_SEAL_RADIUS}
           fill="none"
-          stroke="var(--brass-dim)"
+          stroke="var(--accent-dim)"
           strokeWidth={1.25}
         />
       </g>

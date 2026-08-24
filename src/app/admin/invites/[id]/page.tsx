@@ -75,11 +75,11 @@ export default async function InviteDetailPage({
       ) : null}
 
       {showReveal ? (
-        <div className="rounded border border-[var(--color-brass)] p-4">
+        <div className="rounded border border-[var(--color-accent)] p-4">
           <p className="mb-1 text-sm text-[var(--color-text-muted)]">
             New invite link — copy it now, it will not be shown again.
           </p>
-          <code data-testid="invite-url" className="break-all text-sm text-[var(--brass-ink)]">
+          <code data-testid="invite-url" className="break-all text-sm text-[var(--accent-ink)]">
             {revealUrl}
           </code>
           <Script id={`invite-reveal-seen-${invite.id}`} strategy="afterInteractive" nonce={nonce}>
@@ -89,7 +89,7 @@ export default async function InviteDetailPage({
       ) : null}
 
       {invite.extraSeatsStatus === 'PENDING' ? (
-        <div className="rounded border border-[var(--color-brass)] p-4">
+        <div className="rounded border border-[var(--color-accent)] p-4">
           <p className="mb-3 text-sm">
             Requested {invite.extraSeatsRequested} extra seat(s).
             {invite.extraSeatsReason ? ` Reason: ${invite.extraSeatsReason}` : ''}
@@ -118,7 +118,7 @@ export default async function InviteDetailPage({
         <Field label="Admin notes" name="adminNotes" defaultValue={invite.adminNotes ?? ''} />
         <button
           type="submit"
-          className="self-end rounded bg-[var(--color-brass)] px-4 py-2 font-medium text-[var(--color-ink-deep)]"
+          className="self-end rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
         >
           Save changes
         </button>

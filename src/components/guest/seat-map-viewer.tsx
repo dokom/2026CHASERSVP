@@ -60,14 +60,14 @@ export function SeatMapViewer({ inline, fullscreen }: { inline: React.ReactNode;
           aria-modal="true"
           aria-label="Floorplan of the venue"
           data-seat-map-fullscreen
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--color-ink-deep)]/95 p-4"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--ink)]/95 p-4"
         >
           <button
             type="button"
             autoFocus
             onClick={() => setFullscreen(false)}
             aria-label="Exit full screen"
-            className="relative max-h-full max-w-full cursor-zoom-out rounded border border-[var(--color-brass)] bg-black"
+            className="relative max-h-full max-w-full cursor-zoom-out rounded border border-[var(--color-accent)] bg-black"
           >
             {fullscreen}
           </button>

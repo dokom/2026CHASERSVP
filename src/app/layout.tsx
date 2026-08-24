@@ -21,7 +21,7 @@ const body = Instrument_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'Gala RSVP',
+  title: 'CHASE Gala 2026',
   robots: { index: false, follow: false },
 }
 

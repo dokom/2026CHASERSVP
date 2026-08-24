@@ -30,6 +30,6 @@ export default defineConfig({
     timeout: 180_000,
     // Playwright merges this over process.env for the spawned command, so
     // the app under test reads the e2e database and never the dev one.
-    env: { DATABASE_URL: E2E_DATABASE_URL },
+    env: { DATABASE_URL: E2E_DATABASE_URL, APP_URL: 'http://localhost:3000' },
   },
 })

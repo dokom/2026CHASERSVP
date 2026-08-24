@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { GUEST_CSRF_COOKIE } from '@/lib/auth/csrf'
 import { loadGuestPage } from '@/lib/guest/page-data'
+import { BrandMark } from '@/components/brand-mark'
 import { AgendaTimeline } from '@/components/guest/agenda-timeline'
 import { SeatMap } from '@/components/guest/seat-map'
 import { MotionProvider } from '@/components/motion/motion-provider'
@@ -50,6 +51,11 @@ export default async function GuestPage({
         <BrassLine />
         <FoilHero />
 
+        {/* The host's mark, before the guest's name: this is CHASE's evening. */}
+        <div className="relative z-10 pl-12">
+          <BrandMark size="md" />
+        </div>
+
         <Arrival>
           {/* The seal's own channel, left of the text column: a fixed-width
               marker flush with <main>'s content edge, then pulled back by
@@ -65,7 +71,7 @@ export default async function GuestPage({
               {/* The name is the hero by AREA, not just colour: it floors far
                   larger than this line, which recedes in both size and tint. */}
               <span className="type-title block text-[var(--text-muted)]">Welcome, </span>
-              <span data-guest-name className="type-hero block text-[var(--brass-ink)]">
+              <span data-guest-name className="type-hero block text-[var(--accent-ink)]">
                 {primary ? primary.firstName : invite.label}
               </span>
             </h1>

@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth/guard'
 import { CsrfInput } from '@/components/admin/csrf-input'
+import { BrandMark } from '@/components/brand-mark'
 import { logoutAction } from './login/actions'
 import { AdminNav } from './nav'
 
@@ -13,7 +14,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="min-h-screen">
       <header className="border-b border-[var(--color-border)] px-4 py-3">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
-          <span className="font-serif text-lg text-[var(--brass-ink)]">Gala Admin</span>
+          <span className="flex items-center gap-3">
+            <BrandMark size="sm" />
+            <span className="font-serif text-lg text-[var(--accent-ink)]">Gala 2026</span>
+          </span>
           <AdminNav role={user.role} />
           <form action={logoutAction}>
             <CsrfInput />

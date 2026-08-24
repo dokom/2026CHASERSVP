@@ -9,8 +9,8 @@ import { journey } from '@/lib/motion/journey'
 import type { ColorScheme } from './motion-provider'
 
 const COUNT = 800
-const BRASS = new Color('#C9A24D')
-const BRASS_DIM = new Color('#8C6F2F')
+const ACCENT = new Color('#E00E0F')
+const ACCENT_DIM = new Color('#A10A0B')
 /** Roughly a third of the dark-scheme fleck alpha, so light-scheme foil reads
  * as darker flecks on a bone card rather than a light smear. */
 const LIGHT_ALPHA_SCALE = 1 / 3
@@ -57,7 +57,7 @@ const FRAGMENT = /* glsl */ `
 function applySchemeToMaterial(material: ShaderMaterial, scheme: ColorScheme): void {
   const isLight = scheme === 'light'
   material.blending = isLight ? NormalBlending : AdditiveBlending
-  material.uniforms.uColor!.value = isLight ? BRASS_DIM : BRASS
+  material.uniforms.uColor!.value = isLight ? ACCENT_DIM : ACCENT
   material.uniforms.uAlphaScale!.value = isLight ? LIGHT_ALPHA_SCALE : 1
   material.needsUpdate = true
 }
@@ -116,7 +116,7 @@ export function FoilScene({ scheme }: { scheme: ColorScheme }) {
       uniforms: {
         uTime: { value: 0 },
         uDisperse: { value: 0 },
-        uColor: { value: BRASS },
+        uColor: { value: ACCENT },
         uAlphaScale: { value: 1 },
       },
     })

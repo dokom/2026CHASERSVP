@@ -12,7 +12,7 @@ export function Field(props: {
     <label className="block">
       <span className="mb-1 block text-sm text-[var(--color-text-muted)]">{label}</span>
       <input
-        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)] outline-none focus:border-[var(--color-brass)]"
+        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
         name={name}
         type={type}
         defaultValue={defaultValue}

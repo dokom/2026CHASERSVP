@@ -45,9 +45,9 @@ export function Seal({ initial, size = 'md' }: SealProps) {
     >
       <defs>
         <radialGradient id="seal-wax" cx="40%" cy="35%" r="70%">
-          <stop offset="0%" stopColor="#E0BC6A" />
-          <stop offset="60%" stopColor="var(--brass)" />
-          <stop offset="100%" stopColor="var(--brass-dim)" />
+          <stop offset="0%" stopColor="#FF6B6B" />
+          <stop offset="60%" stopColor="var(--accent)" />
+          <stop offset="100%" stopColor="var(--accent-dim)" />
         </radialGradient>
       </defs>
 
@@ -71,7 +71,7 @@ export function Seal({ initial, size = 'md' }: SealProps) {
       {/* Embossed inner ring — off-centre from the disc's own (60,60), so it
           reads as a stamped die mark rather than a concentric second circle. */}
       <circle cx="52" cy="66" r="19" fill="none" stroke="var(--ink)" strokeOpacity="0.32" strokeWidth="2" />
-      <circle cx="53" cy="65" r="19" fill="none" stroke="#F4E4B8" strokeOpacity="0.3" strokeWidth="1" />
+      <circle cx="53" cy="65" r="19" fill="none" stroke="#FFD1D1" strokeOpacity="0.3" strokeWidth="1" />
 
       {monogram ? (
         <text

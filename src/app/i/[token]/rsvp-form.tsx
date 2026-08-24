@@ -53,7 +53,7 @@ export function RsvpForm({
           role="status"
           data-testid="rsvp-confirmed"
           data-shimmer-text={confirmationMessage}
-          className="rounded border border-[var(--color-brass)] p-4"
+          className="rounded border border-[var(--color-accent)] p-4"
         >
           {confirmationMessage}
         </p>
@@ -122,7 +122,7 @@ export function RsvpForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-[var(--color-brass)] px-6 py-3 font-medium text-[var(--color-ink-deep)] disabled:opacity-60"
+        className="rounded bg-[var(--color-accent)] px-6 py-3 font-medium text-[var(--on-accent)] disabled:opacity-60"
       >
         {pending ? 'Sending…' : 'Confirm response'}
       </button>

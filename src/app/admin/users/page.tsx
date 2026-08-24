@@ -48,7 +48,7 @@ export default async function AdminUsersPage({
         <Field label="Temporary password" name="password" type="password" required />
         <button
           type="submit"
-          className="self-end rounded bg-[var(--color-brass)] px-4 py-2 font-medium text-[var(--color-ink-deep)]"
+          className="self-end rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
         >
           Create admin
         </button>
