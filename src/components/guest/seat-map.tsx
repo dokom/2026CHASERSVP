@@ -1,8 +1,14 @@
 import type { TableMarkerRow } from '@/lib/events/repository'
+import { SeatMapViewer } from './seat-map-viewer'
 
 /**
  * Marker coordinates are normalised 0–1 against the floorplan, so the position
  * stays correct at every rendered size. Percentage offsets, not pixels.
+ *
+ * The [data-seat-map] stage is what SeatAct scales on scroll (toward the
+ * marker, via transform-origin). It must never be the element that clips:
+ * an element cannot `overflow-hidden` its own transform, which is why the
+ * clipping viewport and click-zoom live in SeatMapViewer around it.
  */
 export function SeatMap({
   floorplanAssetId, marker, table,
@@ -20,27 +26,29 @@ export function SeatMap({
       </p>
 
       {floorplanAssetId ? (
-        <div
-          className="relative overflow-hidden rounded border border-[var(--color-border)] lg:max-w-md"
-          data-seat-map
-          style={marker ? { transformOrigin: `${marker.x * 100}% ${marker.y * 100}%` } : undefined}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- served from our own
-              route handler at unknown intrinsic size; next/image adds no value here */}
-          <img
-            src={`/api/media/${floorplanAssetId}`}
-            alt="Floorplan of the venue"
-            className="block w-full"
-          />
-          {marker ? (
-            <span
-              className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--color-ink-deep)] bg-[var(--color-brass)] seat-pulse"
-              style={{ left: `${marker.x * 100}%`, top: `${marker.y * 100}%` }}
-              aria-label={`Table ${table}`}
-              data-testid="table-marker"
+        <SeatMapViewer marker={marker ? { x: marker.x, y: marker.y } : null}>
+          <div
+            className="relative"
+            data-seat-map
+            style={marker ? { transformOrigin: `${marker.x * 100}% ${marker.y * 100}%` } : undefined}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- served from our own
+                route handler at unknown intrinsic size; next/image adds no value here */}
+            <img
+              src={`/api/media/${floorplanAssetId}`}
+              alt="Floorplan of the venue"
+              className="block w-full"
             />
-          ) : null}
-        </div>
+            {marker ? (
+              <span
+                className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--color-ink-deep)] bg-[var(--color-brass)] seat-pulse"
+                style={{ left: `${marker.x * 100}%`, top: `${marker.y * 100}%` }}
+                aria-label={`Table ${table}`}
+                data-testid="table-marker"
+              />
+            ) : null}
+          </div>
+        </SeatMapViewer>
       ) : null}
     </div>
   )
