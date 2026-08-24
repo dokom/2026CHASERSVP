@@ -18,7 +18,7 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:start": "mongod --replSet rs0 --port 27018 --bind_ip 127.0.0.1 --dbpath .mongo/data"
+    "db:start": "node scripts/db-start.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.1.0",
