@@ -73,14 +73,24 @@ test.describe('guest RSVP', () => {
     await page.locator('[data-seat-map-viewport]').click()
     const overlay = page.locator('[data-seat-map-fullscreen]')
     await expect(overlay).toBeVisible()
-    // Full screen means the viewport, not the frame the plan sat in.
+    // Full screen means the viewport, not the frame the plan sat in...
     const box = await overlay.boundingBox()
     const viewport = page.viewportSize()!
     expect(box?.width).toBe(viewport.width)
     expect(box?.height).toBe(viewport.height)
+    // ...and on top of everything: a fixed overlay caught inside one of the
+    // motion layer's transformed ancestors is the same size but paints
+    // underneath the sections after it, which then swallow the closing tap.
+    const topmostIsOverlay = await page.evaluate(() => {
+      const hit = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
+      return !!hit?.closest('[data-seat-map-fullscreen]')
+    })
+    expect(topmostIsOverlay, 'the fullscreen overlay must be the topmost element').toBe(true)
 
-    await page.getByRole('button', { name: 'Exit full screen' }).click()
+    // The plan itself is the exit control: tap it, not a separate button.
+    await overlay.locator('img').click()
     await expect(overlay).toHaveCount(0)
+    await expect(page.locator('[data-seat-map-viewport]')).toBeFocused()
   })
 
   test('nothing to type: names only, nobody highlighted until tapped', async ({ page }, testInfo) => {

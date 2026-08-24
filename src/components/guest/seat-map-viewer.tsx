@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * The floorplan's frame, with click-to-fullscreen.
@@ -48,7 +49,12 @@ export function SeatMapViewer({ inline, fullscreen }: { inline: React.ReactNode;
         {inline}
       </button>
 
-      {isFullscreen ? (
+      {/* Portalled to <body>: the motion layer wraps this section in
+          transformed ancestors, and `position: fixed` inside a transform is
+          trapped in that ancestor's stacking context — the overlay would be
+          drawn underneath the sections that follow it, which then intercept
+          the tap meant to close it. */}
+      {isFullscreen ? createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -68,7 +74,8 @@ export function SeatMapViewer({ inline, fullscreen }: { inline: React.ReactNode;
           <p className="text-sm text-white/80">Tap anywhere to exit</p>
           {/* The backdrop itself closes too: a guest who taps beside the plan expects the same result. */}
           <button type="button" onClick={() => setFullscreen(false)} aria-hidden="true" tabIndex={-1} className="absolute inset-0 -z-10 cursor-zoom-out" />
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </>
   )
