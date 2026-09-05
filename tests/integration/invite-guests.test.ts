@@ -3,7 +3,7 @@ import { testDb, resetDb } from '../helpers/db'
 import { createPlaceholderInvites } from '@/lib/invites/placeholders'
 import { createInvite, getInvite, listInviteTokens } from '@/lib/invites/repository'
 import {
-  addGuest, updateGuest, removeGuest, GuestLimitError, GuestCheckedInError, GuestNotOnInviteError,
+  addGuest, updateGuest, removeGuest, GuestCheckedInError, GuestNotOnInviteError,
 } from '@/lib/invites/guests'
 import { resolveInviteByToken } from '@/lib/guest/resolve'
 
@@ -39,10 +39,17 @@ describe('addGuest', () => {
     expect(invite?.guests.map((g) => [g.firstName, g.isPrimary])).toEqual([['A', true], ['B', false]])
   })
 
-  it('refuses to exceed the seat allotment', async () => {
+  it('adds guests past the seat allotment: seats are a planning number only', async () => {
     const { id } = await placeholder(1)
     await addGuest(testDb, null, id, { firstName: 'A', lastName: 'One' })
-    await expect(addGuest(testDb, null, id, { firstName: 'B', lastName: 'Two' })).rejects.toBeInstanceOf(GuestLimitError)
+    await addGuest(testDb, null, id, { firstName: 'B', lastName: 'Two' })
+    expect((await getInvite(testDb, id))?.guests).toHaveLength(2)
+  })
+
+  it('stores a table on the new guest when given one', async () => {
+    const { id } = await placeholder(1)
+    await addGuest(testDb, null, id, { firstName: 'A', lastName: 'One', tableNumber: '14' })
+    expect((await getInvite(testDb, id))?.guests[0]?.tableNumber).toBe('14')
   })
 
   it('writes an audit row', async () => {
@@ -61,6 +68,19 @@ describe('updateGuest', () => {
     await updateGuest(testDb, null, invite.id, guest.id, { firstName: 'Jordyn', lastName: 'Reyes', company: 'Acme', email: '' })
     const after = (await getInvite(testDb, invite.id))!.guests[0]
     expect(after).toMatchObject({ firstName: 'Jordyn', company: 'Acme', email: null, isPrimary: true })
+  })
+
+  it('sets and clears the guest table independently of the invite', async () => {
+    const { invite } = await createInvite(testDb, null, {
+      label: 'P', seatsAllotted: 1, tableNumber: '3', primaryGuest: { firstName: 'Jordan', lastName: 'Reyes' },
+    })
+    const guest = (await getInvite(testDb, invite.id))!.guests[0]!
+    await updateGuest(testDb, null, invite.id, guest.id, { firstName: 'Jordan', lastName: 'Reyes', tableNumber: '9' })
+    expect((await getInvite(testDb, invite.id))!.guests[0]?.tableNumber).toBe('9')
+
+    await updateGuest(testDb, null, invite.id, guest.id, { firstName: 'Jordan', lastName: 'Reyes', tableNumber: '' })
+    expect((await getInvite(testDb, invite.id))!.guests[0]?.tableNumber).toBeNull()
+    expect((await getInvite(testDb, invite.id))!.tableNumber).toBe('3')
   })
 })
 

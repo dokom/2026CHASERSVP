@@ -109,7 +109,7 @@ export default async function InviteDetailPage({
 
       <section aria-labelledby="guests-heading" className="space-y-4">
         <h2 id="guests-heading" className="font-serif text-xl">
-          Guests <span className="text-sm text-[var(--color-text-muted)]">({invite.guests.length} of {invite.seatsAllotted} seats)</span>
+          Guests <span className="text-sm text-[var(--color-text-muted)]">({invite.guests.length})</span>
         </h2>
 
         {invite.guests.length === 0 ? (
@@ -132,7 +132,7 @@ export default async function InviteDetailPage({
               <span className="font-medium">{guest.firstName} {guest.lastName}</span>
               {guest.isPrimary ? ' · primary' : ''}
               {' · '}Attending: {guest.attending === null ? 'no answer yet' : guest.attending ? 'yes' : 'no'}
-              {' · '}Table: {guest.tableNumber ?? invite.tableNumber ?? '—'}
+              {' · '}Table: {guest.tableNumber ?? invite.tableNumber ?? '—'}{guest.tableNumber ? '' : invite.tableNumber ? ' (party default)' : ''}
               {guest.checkedInAt ? ' · checked in' : ''}
             </p>
             <Field label="First name" name="firstName" defaultValue={guest.firstName} required />
@@ -140,6 +140,7 @@ export default async function InviteDetailPage({
             <Field label="Email" name="email" type="email" defaultValue={guest.email ?? ''} />
             <Field label="Company" name="company" defaultValue={guest.company ?? ''} />
             <Field label="Title" name="title" defaultValue={guest.title ?? ''} />
+            <Field label="Table" name="tableNumber" defaultValue={guest.tableNumber ?? ''} />
             <div className="flex items-end gap-3">
               <button type="submit" className="rounded border border-[var(--color-border)] px-4 py-2 text-sm">
                 Save guest
@@ -157,26 +158,25 @@ export default async function InviteDetailPage({
           </form>
         ))}
 
-        {invite.guests.length < invite.seatsAllotted ? (
-          <details className="rounded border border-[var(--color-border)] p-4" open={invite.guests.length === 0}>
-            <summary className="cursor-pointer text-sm">Add a guest</summary>
-            <form action={addGuestAction} className="mt-4 grid gap-4 sm:grid-cols-3">
-              <CsrfInput />
-              <input type="hidden" name="id" value={invite.id} />
-              <Field label="First name" name="firstName" required />
-              <Field label="Last name" name="lastName" required />
-              <Field label="Email" name="email" type="email" />
-              <Field label="Company" name="company" />
-              <Field label="Title" name="title" />
-              <button
-                type="submit"
-                className="self-end rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
-              >
-                Add guest
-              </button>
-            </form>
-          </details>
-        ) : null}
+        <details className="rounded border border-[var(--color-border)] p-4" open={invite.guests.length === 0}>
+          <summary className="cursor-pointer text-sm">Add a guest</summary>
+          <form action={addGuestAction} className="mt-4 grid gap-4 sm:grid-cols-3">
+            <CsrfInput />
+            <input type="hidden" name="id" value={invite.id} />
+            <Field label="First name" name="firstName" required />
+            <Field label="Last name" name="lastName" required />
+            <Field label="Email" name="email" type="email" />
+            <Field label="Company" name="company" />
+            <Field label="Title" name="title" />
+            <Field label="Table" name="tableNumber" />
+            <button
+              type="submit"
+              className="self-end rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
+            >
+              Add guest
+            </button>
+          </form>
+        </details>
       </section>
 
       <div className="flex gap-4">

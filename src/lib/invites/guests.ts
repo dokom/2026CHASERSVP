@@ -2,13 +2,6 @@ import type { PrismaClient, Prisma } from '@prisma/client'
 import { writeAudit } from '@/lib/audit'
 import { recomputeInviteStatus } from './repository'
 
-export class GuestLimitError extends Error {
-  constructor(seats: number) {
-    super(`This invite has only ${seats} seat(s) — raise the seat count before adding another guest`)
-    this.name = 'GuestLimitError'
-  }
-}
-
 export class GuestCheckedInError extends Error {
   constructor() {
     super('This guest has already checked in and cannot be removed')
@@ -22,6 +15,7 @@ export type GuestDetails = {
   email?: string
   company?: string
   title?: string
+  tableNumber?: string
 }
 
 function toData(details: GuestDetails) {
@@ -31,6 +25,7 @@ function toData(details: GuestDetails) {
     email: details.email || null,
     company: details.company || null,
     title: details.title || null,
+    tableNumber: details.tableNumber || null,
   }
 }
 
@@ -48,16 +43,11 @@ export async function addGuest(
   return db.$transaction(async (tx) => {
     const invite = await tx.invite.findUniqueOrThrow({
       where: { id: inviteId },
-      select: { seatsAllotted: true, _count: { select: { guests: true } } },
+      select: { _count: { select: { guests: true } } },
     })
-    if (invite._count.guests >= invite.seatsAllotted) throw new GuestLimitError(invite.seatsAllotted)
 
-    // Touch the invite document itself. A guest insert alone never writes to
-    // the Invite row, so two admins adding a guest at once (or one adding
-    // while another shrinks seatsAllotted) would each pass the count check
-    // above on their own snapshot and both commit. Writing the same document
-    // from both transactions makes MongoDB abort the second with a write
-    // conflict instead of letting the seat limit be exceeded.
+    // Touch the invite document so two admins adding the first guest at once
+    // conflict instead of both becoming primary.
     await tx.invite.update({ where: { id: inviteId }, data: { updatedAt: new Date() } })
 
     const guest = await tx.guest.create({

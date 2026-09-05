@@ -47,7 +47,9 @@ export const createPlaceholdersSchema = z.object({
 })
 
 /** A person the admin attaches to (or edits on) an invite. */
-export const inviteGuestSchema = primaryGuestSchema
+export const inviteGuestSchema = primaryGuestSchema.extend({
+  tableNumber: z.string().trim().max(20).optional().or(z.literal('')),
+})
 
 export const updateInviteSchema = z.object({
   label: z.string().trim().min(1).max(160).optional(),

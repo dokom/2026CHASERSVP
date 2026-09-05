@@ -14,7 +14,7 @@ import {
 import { inviteUrl } from '@/lib/invites/qr'
 import { createPlaceholderInvites } from '@/lib/invites/placeholders'
 import {
-  addGuest, updateGuest, removeGuest, GuestLimitError, GuestCheckedInError, GuestNotOnInviteError,
+  addGuest, updateGuest, removeGuest, GuestCheckedInError, GuestNotOnInviteError,
 } from '@/lib/invites/guests'
 
 /** MongoDB ObjectId — 24 lowercase hex characters. */
@@ -48,7 +48,6 @@ function isConcurrentWriteError(error: unknown): boolean {
 }
 
 function describe(error: unknown): string {
-  if (error instanceof GuestLimitError) return error.message
   if (error instanceof GuestCheckedInError) return error.message
   if (error instanceof GuestNotOnInviteError) return error.message
   if (isConcurrentWriteError(error)) return 'Someone else changed this at the same moment. Try again.'
@@ -62,6 +61,7 @@ function guestDetails(formData: FormData) {
     email: formData.get('email') ?? '',
     company: formData.get('company') ?? '',
     title: formData.get('title') ?? '',
+    tableNumber: formData.get('tableNumber') ?? '',
   }
 }
 
