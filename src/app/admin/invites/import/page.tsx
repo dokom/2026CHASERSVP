@@ -28,6 +28,11 @@ export default async function ImportPage() {
             (c) => !['label', 'primaryFirstName', 'primaryLastName'].includes(c),
           ).map((c) => <code key={c} className="mr-1">{c}</code>)}
         </p>
+        <p className="mb-2 text-[var(--color-text-muted)]">
+          A row whose <code>label</code> matches an existing invite updates it in place and keeps its QR
+          code. A bare number like <code>002</code> matches the card printed with that number. Anything
+          else creates a new invite.
+        </p>
         <pre className="overflow-x-auto rounded bg-[var(--color-surface)] p-3 text-xs">
           {csvTemplate()}
         </pre>

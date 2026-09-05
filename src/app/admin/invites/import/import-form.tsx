@@ -7,6 +7,9 @@ export function ImportForm({ csrf }: { csrf: string }) {
   const [state, validate, pending] = useActionState<PreviewState, FormData>(validateCsvAction, null)
   const readyCount = state?.rows.filter((r) => r.data).length ?? 0
   const errorRows = state?.rows.filter((r) => r.errors.length) ?? []
+  const count = (action: 'create' | 'update' | 'skip') =>
+    Object.values(state?.actions ?? {}).filter((a) => a === action).length
+  const skipRows = Object.entries(state?.skipReasons ?? {})
 
   return (
     <div className="space-y-8">
@@ -35,8 +38,16 @@ export function ImportForm({ csrf }: { csrf: string }) {
         <>
           <p className="text-sm">
             {readyCount} row{readyCount === 1 ? '' : 's'} ready to import
-            {errorRows.length ? `, ${errorRows.length} with errors (they will be skipped)` : ''}
+            {count('update') ? `: ${count('update')} will update an existing invite, ${count('create')} will create a new one` : ''}
+            {errorRows.length ? `. ${errorRows.length} with errors (they will be skipped)` : ''}
           </p>
+          {skipRows.length ? (
+            <ul className="space-y-1 text-sm text-[var(--color-text-muted)]">
+              {skipRows.map(([rowNumber, reason]) => (
+                <li key={rowNumber}>Row {rowNumber}: will be skipped, {reason}</li>
+              ))}
+            </ul>
+          ) : null}
 
           {errorRows.length ? (
             <ul className="space-y-1 text-sm text-[var(--color-danger)]">

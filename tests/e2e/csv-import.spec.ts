@@ -1,4 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
+import { PrismaClient } from '@prisma/client'
+import { createPlaceholderInvites } from '../../src/lib/invites/placeholders'
+import { listInviteTokens } from '../../src/lib/invites/repository'
+import { E2E_DATABASE_URL } from '../../playwright.config'
 
 const HEADER = 'label,seatsAllotted,tableNumber,primaryFirstName,primaryLastName,primaryEmail,primaryCompany,primaryTitle,adminNotes'
 
@@ -53,5 +57,39 @@ test.describe('CSV import', () => {
     await expect(page.getByRole('alert').filter({ hasText: 'primaryFirstName' })).toContainText(
       'primaryFirstName',
     )
+  })
+
+  test('fills in printed placeholders by label without changing their codes', async ({ page }) => {
+    const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+    let label: string
+    let tokenBefore: string
+    try {
+      const { lastNumber } = await createPlaceholderInvites(prisma, null, { count: 1, seatsAllotted: 1 })
+      const [row] = await listInviteTokens(prisma, { number: lastNumber })
+      label = row!.label
+      tokenBefore = row!.token
+    } finally {
+      await prisma.$disconnect()
+    }
+
+    await signIn(page)
+    await page.goto('/admin/invites/import')
+    const stamp = Date.now()
+    await upload(page, `${HEADER}\n${label},2,,Priya,Natarajan,priya${stamp}@example.com,,,`)
+
+    await expect(page.getByText('1 row ready to import')).toBeVisible()
+    await expect(page.getByText(/1 will update an existing invite/)).toBeVisible()
+    await page.getByRole('button', { name: 'Import 1 invite' }).click()
+    await expect(page).toHaveURL(/updated=1/)
+
+    const after = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+    try {
+      const [row] = await listInviteTokens(after, { label })
+      expect(row?.token).toBe(tokenBefore)
+      const guests = await after.guest.findMany({ where: { inviteId: row!.id } })
+      expect(guests.map((g) => g.firstName)).toEqual(['Priya'])
+    } finally {
+      await after.$disconnect()
+    }
   })
 })

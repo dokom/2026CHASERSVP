@@ -25,6 +25,12 @@ export default async function InvitesPage({
 }) {
   await requireRole('ADMIN')
   const params = await searchParams
+  const imported = Number(params.imported ?? 0)
+  const updated = Number(params.updated ?? 0)
+  const skipped = Number(params.skipped ?? 0)
+  const importSummary = imported || updated || skipped
+    ? `Import finished: ${imported} created, ${updated} updated, ${skipped} skipped.`
+    : null
   // `.parse()` throws on a duplicated param, 500-ing the page. `.safeParse()`
   // treats any malformed query as "no filters" instead of a hard failure.
   const parsedQuery = inviteQuerySchema.safeParse({
@@ -57,6 +63,12 @@ export default async function InvitesPage({
           <Link href="/api/admin/qr?format=csv" className="underline underline-offset-4">Download QR list (CSV)</Link>
         </div>
       </div>
+
+      {importSummary ? (
+        <p role="status" className="rounded border border-[var(--color-accent)] px-3 py-2 text-sm">
+          {importSummary}
+        </p>
+      ) : null}
 
       {params.error ? (
         <p role="alert" className="rounded border border-[var(--color-danger)] px-3 py-2 text-sm text-[var(--color-danger)]">

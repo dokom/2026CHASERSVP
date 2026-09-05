@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { requireCsrf, requireRole } from '@/lib/auth/guard'
 import { parseInviteCsv, type ParsedRow } from '@/lib/invites/csv'
 import { commitInviteImport, MAX_IMPORT_ROWS } from '@/lib/invites/import'
+import { planImport } from '@/lib/invites/import-plan'
 import { importRowSchema } from '@/lib/validation/invites'
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -21,6 +22,9 @@ const importRowsSchema = z.array(importRowSchema).max(MAX_IMPORT_ROWS)
 export type PreviewState = {
   headerErrors: string[]
   rows: ParsedRow[]
+  /** Per rowNumber: what the commit will do with a valid row. */
+  actions: Record<number, 'create' | 'update' | 'skip'>
+  skipReasons: Record<number, string>
   payload: string
 } | null
 
@@ -37,10 +41,10 @@ export async function validateCsvAction(
 
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    return { headerErrors: ['Choose a CSV file'], rows: [], payload: '' }
+    return { headerErrors: ['Choose a CSV file'], rows: [], actions: {}, skipReasons: {}, payload: '' }
   }
   if (file.size > MAX_FILE_BYTES) {
-    return { headerErrors: ['File is larger than 5 MB'], rows: [], payload: '' }
+    return { headerErrors: ['File is larger than 5 MB'], rows: [], actions: {}, skipReasons: {}, payload: '' }
   }
 
   const text = await file.text()
@@ -50,12 +54,22 @@ export async function validateCsvAction(
     return {
       headerErrors: [`File has ${rows.length} rows; the limit is ${MAX_IMPORT_ROWS}`],
       rows: [],
+      actions: {},
+      skipReasons: {},
       payload: '',
     }
   }
 
-  const valid = rows.filter((r) => r.data).map((r) => r.data!)
-  return { headerErrors, rows, payload: JSON.stringify(valid) }
+  const validRows = rows.filter((r) => r.data)
+  const planned = await planImport(prisma, validRows.map((r) => r.data!))
+  const actions: Record<number, 'create' | 'update' | 'skip'> = {}
+  const skipReasons: Record<number, string> = {}
+  planned.forEach(({ plan }, i) => {
+    const rowNumber = validRows[i]!.rowNumber
+    actions[rowNumber] = plan.action
+    if (plan.action === 'skip') skipReasons[rowNumber] = plan.reason
+  })
+  return { headerErrors, rows, actions, skipReasons, payload: JSON.stringify(validRows.map((r) => r.data)) }
 }
 
 export async function commitCsvAction(formData: FormData): Promise<void> {
@@ -77,5 +91,5 @@ export async function commitCsvAction(formData: FormData): Promise<void> {
 
   const result = await commitInviteImport(prisma, actor.id, parsed.data)
   revalidatePath('/admin/invites')
-  redirect(`/admin/invites?imported=${result.created}&skipped=${result.skippedExistingEmails.length}`)
+  redirect(`/admin/invites?imported=${result.created}&updated=${result.updated}&skipped=${result.skipped.length}`)
 }
