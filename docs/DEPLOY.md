@@ -156,6 +156,11 @@ It numbers unnumbered invites in creation order and is safe to re-run.
 - [ ] Open one invitation link on a phone over mobile data (not the LAN).
 - [ ] Scan its QR from **Admin → Check-in** on a second phone.
 
+Re-importing the spreadsheet is safe. A row whose `label` matches an
+existing invite (or whose label is the bare card number, like `002`)
+updates that invite and its primary guest in place; the QR code printed on
+the card keeps working. Rows that match nothing create new invites.
+
 ## What is deliberately not here
 
 - No HTTP listener and no automatic HTTP→HTTPS redirect at the origin

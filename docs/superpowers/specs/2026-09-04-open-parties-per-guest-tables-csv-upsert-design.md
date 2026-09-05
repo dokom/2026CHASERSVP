@@ -98,6 +98,9 @@ guest and loses the party-level one.
   "label matches several invites" in the preview and skipped on commit.
 - The same label appears twice in the file: second and later rows
   flagged "duplicate label in file" and skipped.
+- Two rows resolve to the same invite (for example `2` and `002`, or a
+  party name and its card number): the later row is flagged
+  "same invite as an earlier row" and skipped.
 - Labels are not made unique in the database. Existing data may already
   collide, and a unique index would refuse the `db:push`.
 
