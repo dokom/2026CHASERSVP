@@ -18,7 +18,11 @@ import { E2E_DATABASE_URL } from '../../playwright.config'
  */
 async function freshInviteToken(
   label: string,
-  options: { confirmed?: boolean; tableNumber?: string } = {},
+  options: {
+    confirmed?: boolean
+    tableNumber?: string
+    companions?: { firstName: string; tableNumber?: string }[]
+  } = {},
 ): Promise<string> {
   const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
   try {
@@ -28,6 +32,17 @@ async function freshInviteToken(
       tableNumber: options.tableNumber,
       primaryGuest: { firstName: 'Noor', lastName: 'Haddad' },
     })
+    for (const companion of options.companions ?? []) {
+      await prisma.guest.create({
+        data: {
+          inviteId: created.invite.id,
+          firstName: companion.firstName,
+          lastName: 'Haddad',
+          attending: options.confirmed ? true : null,
+          tableNumber: companion.tableNumber ?? null,
+        },
+      })
+    }
     if (options.confirmed) {
       await prisma.guest.updateMany({ where: { inviteId: created.invite.id }, data: { attending: true } })
       await prisma.invite.update({ where: { id: created.invite.id }, data: { status: 'ATTENDING' } })
@@ -94,8 +109,26 @@ test.describe('guest RSVP', () => {
       confirmed: true, tableNumber: '12',
     })
     await page.goto(`/i/${token}`)
-    await expect(page.getByText(/You.re at/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your seat' })).toBeVisible()
+    await expect(page.getByTestId('seat-list').getByRole('listitem')).toHaveCount(1)
+    await expect(page.getByTestId('seat-list')).toContainText('Table 12')
     await expect(page.locator('[data-countdown]')).toHaveCount(0)
+  })
+
+  test('a split party sees each guest with their own table and every table marked', async ({ page }, testInfo) => {
+    const token = await freshInviteToken(`E2E Split ${testInfo.project.name} ${Date.now()}`, {
+      confirmed: true, tableNumber: '12',
+      companions: [{ firstName: 'Sam', tableNumber: '7' }, { firstName: 'Ola' }],
+    })
+    await page.goto(`/i/${token}`)
+    await expect(page.getByRole('heading', { name: 'Your seats' })).toBeVisible()
+    const items = page.getByTestId('seat-list').getByRole('listitem')
+    await expect(items).toHaveCount(3)
+    await expect(items.nth(0)).toContainText('Noor Haddad')
+    await expect(items.nth(0)).toContainText('Table 12')
+    await expect(items.nth(1)).toContainText('Sam Haddad')
+    await expect(items.nth(1)).toContainText('Table 7')
+    await expect(items.nth(2)).toContainText('Table 12')
   })
 
   test('an unconfirmed guest sees a countdown where the seat will be', async ({ page }, testInfo) => {

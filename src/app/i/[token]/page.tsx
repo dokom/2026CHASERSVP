@@ -59,7 +59,7 @@ export default async function GuestPage({
   const csrf = store.get(GUEST_CSRF_COOKIE)?.value
   if (!csrf) throw new Error('CSRF cookie missing - check that src/proxy.ts matches /i/*')
 
-  const { invite, event, window, table, marker, seat } = data
+  const { invite, event, window, seats, seat } = data
   const primary = invite.guests.find((guest) => guest.isPrimary) ?? invite.guests[0]
   // A printed placeholder nobody has been assigned to yet: greet by number,
   // and hold the RSVP until the organiser attaches a name.
@@ -134,11 +134,11 @@ export default async function GuestPage({
             </Evening>
           ) : null}
 
-          {seat.shown && table ? (
+          {seat.shown && seats.length > 0 ? (
             <SeatAct>
               <section aria-labelledby="seat" className="relative z-10 space-y-4 pl-12">
-                <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
-                <SeatMap floorplanAssetId={event.floorplanAssetId} marker={marker} table={table} />
+                <h2 id="seat" className="font-serif text-3xl">{seats.length > 1 ? 'Your seats' : 'Your seat'}</h2>
+                <SeatMap floorplanAssetId={event.floorplanAssetId} seats={seats} />
               </section>
             </SeatAct>
           ) : (
