@@ -142,13 +142,19 @@ test.describe('invite management', () => {
     await expect(page.getByTestId('invite-url')).toHaveCount(0)
   })
 
-  test('refuses to shrink seats below the guest count', async ({ page }) => {
+  test('lets seats shrink below the guest count', async ({ page }) => {
     await signIn(page)
     await page.goto(`/admin/invites/${await disposableInviteId(`E2E Shrink ${Date.now()}`)}`)
-    // exact: the guests section's accessible name ("Guests (1 of 1 seats)")
-    // would otherwise match the substring too.
     await page.getByLabel('Seats', { exact: true }).fill('0')
     await page.getByRole('button', { name: 'Save changes' }).click()
+    // Zod refuses 0 (min 1) and reports it; 1 with one guest is accepted silently.
     await expect(page.getByRole('alert')).toBeVisible()
+    // The failed save redirected here with ?error=... still in the URL;
+    // navigate to the bare detail URL first so that stale alert can't make
+    // the next assertion pass — or fail for the wrong reason.
+    await page.goto(page.url().split('?')[0] ?? page.url())
+    await page.getByLabel('Seats', { exact: true }).fill('1')
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await expect(page.getByRole('alert')).toHaveCount(0)
   })
 })

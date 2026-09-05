@@ -6,13 +6,6 @@ import { deriveInviteStatus, type InviteStatus } from './status'
 import { nextNumbers } from './numbering'
 import { writeAudit, type AuditClient } from '@/lib/audit'
 
-export class SeatLimitError extends Error {
-  constructor(seats: number, guests: number) {
-    super(`Cannot reduce to ${seats} seats — this invite already has ${guests} guests`)
-    this.name = 'SeatLimitError'
-  }
-}
-
 /**
  * Hands out the next `count` invite numbers inside the caller's transaction.
  * The unique index on `Invite.number` is the backstop: two admins creating
@@ -34,8 +27,6 @@ export type InviteRow = {
   seatsAllotted: number
   status: InviteStatus
   tableNumber: string | null
-  extraSeatsRequested: number
-  extraSeatsStatus: 'NONE' | 'PENDING' | 'APPROVED' | 'DENIED'
   respondedAt: Date | null
   createdAt: Date
   guestCount: number
@@ -43,7 +34,7 @@ export type InviteRow = {
 
 const ROW_SELECT = {
   id: true, number: true, label: true, seatsAllotted: true, status: true, tableNumber: true,
-  extraSeatsRequested: true, extraSeatsStatus: true, respondedAt: true, createdAt: true,
+  respondedAt: true, createdAt: true,
   _count: { select: { guests: true } },
 } satisfies Prisma.InviteSelect
 
@@ -164,7 +155,6 @@ export async function listInvites(
 
 export type InviteDetail = InviteRow & {
   adminNotes: string | null
-  extraSeatsReason: string | null
   guests: {
     id: string
     firstName: string
@@ -197,7 +187,6 @@ export async function getInvite(db: PrismaClient, id: string): Promise<InviteDet
       select: {
         ...ROW_SELECT,
         adminNotes: true,
-        extraSeatsReason: true,
         guests: {
           select: {
             id: true, firstName: true, lastName: true, badgeName: true, company: true,
@@ -231,10 +220,6 @@ export async function updateInvite(
   patch: UpdateInvitePatch,
 ): Promise<void> {
   await db.$transaction(async (tx) => {
-    if (patch.seatsAllotted !== undefined) {
-      const guests = await tx.guest.count({ where: { inviteId: id } })
-      if (patch.seatsAllotted < guests) throw new SeatLimitError(patch.seatsAllotted, guests)
-    }
     await tx.invite.update({
       where: { id },
       data: {
@@ -279,33 +264,6 @@ export async function deleteInvite(
     await writeAudit(tx, {
       actorId, action: 'invite.delete', entity: 'Invite', entityId: id,
       meta: { label: invite.label },
-    })
-  })
-}
-
-export async function resolveExtraSeats(
-  db: PrismaClient,
-  actorId: string | null,
-  id: string,
-  decision: 'APPROVED' | 'DENIED',
-): Promise<void> {
-  await db.$transaction(async (tx) => {
-    const invite = await tx.invite.findUniqueOrThrow({
-      where: { id },
-      select: { seatsAllotted: true, extraSeatsRequested: true },
-    })
-    await tx.invite.update({
-      where: { id },
-      data: {
-        extraSeatsStatus: decision,
-        ...(decision === 'APPROVED'
-          ? { seatsAllotted: invite.seatsAllotted + invite.extraSeatsRequested }
-          : {}),
-      },
-    })
-    await writeAudit(tx, {
-      actorId, action: 'invite.resolveExtraSeats', entity: 'Invite', entityId: id,
-      meta: { decision, requested: invite.extraSeatsRequested },
     })
   })
 }

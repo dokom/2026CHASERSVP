@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { testDb, resetDb } from '../helpers/db'
 import {
   createInvite, listInvites, getInvite, updateInvite,
-  regenerateInviteToken, deleteInvite, resolveExtraSeats,
-  recomputeInviteStatus, listInviteTokens, getInviteToken, SeatLimitError,
+  regenerateInviteToken, deleteInvite,
+  recomputeInviteStatus, listInviteTokens, getInviteToken,
 } from '@/lib/invites/repository'
 import { hashToken } from '@/lib/crypto/tokens'
 
@@ -95,13 +95,11 @@ describe('invite repository', () => {
     expect(row.tableNumber).toBe('12')
   })
 
-  it('refuses to shrink seats below the number of guests', async () => {
+  it('lets seats shrink below the guest count: the allowance is a planning number only', async () => {
     const { invite } = await createInvite(testDb, null, base)
-    await testDb.guest.create({
-      data: { inviteId: invite.id, firstName: 'Sam', lastName: 'Reyes' },
-    })
-    await expect(updateInvite(testDb, null, invite.id, { seatsAllotted: 1 }))
-      .rejects.toBeInstanceOf(SeatLimitError)
+    await testDb.guest.create({ data: { inviteId: invite.id, firstName: 'Sam', lastName: 'Reyes' } })
+    await updateInvite(testDb, null, invite.id, { seatsAllotted: 1 })
+    expect((await testDb.invite.findUniqueOrThrow({ where: { id: invite.id } })).seatsAllotted).toBe(1)
   })
 
   it('regenerates the token and invalidates the old one', async () => {
@@ -118,30 +116,6 @@ describe('invite repository', () => {
     await deleteInvite(testDb, null, invite.id)
     expect(await testDb.invite.count()).toBe(0)
     expect(await testDb.guest.count()).toBe(0)
-  })
-
-  it('approving extra seats raises the allowance', async () => {
-    const { invite } = await createInvite(testDb, null, base)
-    await testDb.invite.update({
-      where: { id: invite.id },
-      data: { extraSeatsRequested: 2, extraSeatsStatus: 'PENDING' },
-    })
-    await resolveExtraSeats(testDb, null, invite.id, 'APPROVED')
-    const row = await testDb.invite.findUniqueOrThrow({ where: { id: invite.id } })
-    expect(row.seatsAllotted).toBe(4)
-    expect(row.extraSeatsStatus).toBe('APPROVED')
-  })
-
-  it('denying extra seats leaves the allowance alone', async () => {
-    const { invite } = await createInvite(testDb, null, base)
-    await testDb.invite.update({
-      where: { id: invite.id },
-      data: { extraSeatsRequested: 2, extraSeatsStatus: 'PENDING' },
-    })
-    await resolveExtraSeats(testDb, null, invite.id, 'DENIED')
-    const row = await testDb.invite.findUniqueOrThrow({ where: { id: invite.id } })
-    expect(row.seatsAllotted).toBe(2)
-    expect(row.extraSeatsStatus).toBe('DENIED')
   })
 
   it('recomputes status from guest attendance', async () => {

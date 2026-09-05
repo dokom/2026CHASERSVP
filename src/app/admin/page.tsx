@@ -22,12 +22,6 @@ export default async function AdminDashboard() {
         <StatTile label="Arrived" value={d.guests.checkedIn} hint={`of ${d.guests.attending}`} />
       </div>
 
-      {d.pendingExtraSeats > 0 ? (
-        <p className="rounded border border-[var(--accent)] px-4 py-3 text-sm">
-          {d.pendingExtraSeats} extra-seat request{d.pendingExtraSeats === 1 ? '' : 's'} waiting for a decision.
-        </p>
-      ) : null}
-
       <div className="grid gap-10 lg:grid-cols-2">
         <BarList title="Responses" rows={[
           { label: 'Attending', count: d.invites.attending },

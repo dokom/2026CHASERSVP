@@ -6,10 +6,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { getEnv } from '@/lib/env'
 import { requireCsrf, requireRole } from '@/lib/auth/guard'
-import {
-  createInvite, updateInvite, deleteInvite, regenerateInviteToken,
-  resolveExtraSeats, SeatLimitError,
-} from '@/lib/invites/repository'
+import { createInvite, updateInvite, deleteInvite, regenerateInviteToken } from '@/lib/invites/repository'
 import {
   createInviteSchema, updateInviteSchema, createPlaceholdersSchema, inviteGuestSchema,
   INVITE_REVEAL_COOKIE, INVITE_REVEAL_SEEN_COOKIE,
@@ -51,7 +48,6 @@ function isConcurrentWriteError(error: unknown): boolean {
 }
 
 function describe(error: unknown): string {
-  if (error instanceof SeatLimitError) return error.message
   if (error instanceof GuestLimitError) return error.message
   if (error instanceof GuestCheckedInError) return error.message
   if (error instanceof GuestNotOnInviteError) return error.message
@@ -247,20 +243,4 @@ export async function regenerateTokenAction(formData: FormData): Promise<void> {
   store.delete({ name: INVITE_REVEAL_SEEN_COOKIE, path: revealCookiePath(id) })
 
   redirect(revealCookiePath(id))
-}
-
-export async function resolveExtraSeatsAction(formData: FormData): Promise<void> {
-  const actor = await requireRole('ADMIN')
-  await requireCsrf(formData)
-
-  const id = String(formData.get('id') ?? '')
-  if (!isValidId(id)) failTo('/admin/invites', 'Invalid invite id')
-
-  const decision = formData.get('decision') === 'APPROVED' ? 'APPROVED' : 'DENIED'
-  try {
-    await resolveExtraSeats(prisma, actor.id, id, decision)
-  } catch (error) {
-    failTo(`/admin/invites/${id}`, describe(error))
-  }
-  revalidatePath(`/admin/invites/${id}`)
 }

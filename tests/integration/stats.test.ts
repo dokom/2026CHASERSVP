@@ -17,13 +17,13 @@ async function seed() {
     include: { mealOptions: true },
   })
   const [beef, fish] = event.mealOptions
-  const mk = (label: string, status: 'PENDING' | 'ATTENDING' | 'DECLINED' | 'PARTIAL', respondedAt: Date | null, extra: 'NONE' | 'PENDING' | 'APPROVED' | 'DENIED' = 'NONE') =>
-    testDb.invite.create({ data: { tokenHash: label, tokenCipher: 'c', number: label.charCodeAt(0), label, status, respondedAt, extraSeatsStatus: extra, seatsAllotted: 2 } })
+  const mk = (label: string, status: 'PENDING' | 'ATTENDING' | 'DECLINED' | 'PARTIAL', respondedAt: Date | null) =>
+    testDb.invite.create({ data: { tokenHash: label, tokenCipher: 'c', number: label.charCodeAt(0), label, status, respondedAt, seatsAllotted: 2 } })
 
   const a = await mk('A', 'ATTENDING', new Date('2026-09-01T10:00:00Z'))
   const b = await mk('B', 'ATTENDING', new Date('2026-09-01T15:00:00Z'))
   const c = await mk('C', 'DECLINED', new Date('2026-09-03T10:00:00Z'))
-  const d = await mk('D', 'PARTIAL', new Date('2026-09-05T10:00:00Z'), 'PENDING')
+  const d = await mk('D', 'PARTIAL', new Date('2026-09-05T10:00:00Z'))
   await mk('E', 'PENDING', null)
 
   await testDb.guest.createMany({ data: [
@@ -76,11 +76,6 @@ describe('dashboard', () => {
       { date: '2026-09-03', count: 1 },
       { date: '2026-09-05', count: 1 },
     ])
-  })
-
-  it('counts pending extra-seat requests', async () => {
-    await seed()
-    expect((await dashboard(testDb)).pendingExtraSeats).toBe(1)
   })
 
   it('is all zeros on an empty database rather than throwing', async () => {

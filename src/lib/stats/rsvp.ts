@@ -6,20 +6,18 @@ export type Dashboard = {
   guests: { attending: number; checkedIn: number }
   meals: { label: string; count: number; isActive: boolean }[]
   responsesByDay: { date: string; count: number }[]
-  pendingExtraSeats: number
 }
 
 const day = (d: Date) => d.toISOString().slice(0, 10)
 
 export async function dashboard(db: PrismaClient): Promise<Dashboard> {
-  const [byStatus, guests, meals, mealCounts, responded, pendingExtraSeats] = await Promise.all([
+  const [byStatus, guests, meals, mealCounts, responded] = await Promise.all([
     db.invite.groupBy({ by: ['status'], _count: { _all: true } }),
     checkInProgress(db),
     db.mealOption.findMany({ select: { id: true, label: true, isActive: true }, orderBy: { sortOrder: 'asc' } }),
     // Only people who are coming eat. Retired options still count: the choice was made.
     db.guest.groupBy({ by: ['mealOptionId'], where: { attending: true, mealOptionId: { not: null } }, _count: { _all: true } }),
     db.invite.findMany({ where: { respondedAt: { not: null } }, select: { respondedAt: true }, orderBy: { respondedAt: 'asc' } }),
-    db.invite.count({ where: { extraSeatsStatus: 'PENDING' } }),
   ])
 
   const count = (status: string) => byStatus.find((s) => s.status === status)?._count._all ?? 0
@@ -37,6 +35,5 @@ export async function dashboard(db: PrismaClient): Promise<Dashboard> {
     guests,
     meals: meals.map((m) => ({ label: m.label, count: countsByMeal.get(m.id) ?? 0, isActive: m.isActive })),
     responsesByDay: [...byDay.entries()].map(([date, c]) => ({ date, count: c })),
-    pendingExtraSeats,
   }
 }

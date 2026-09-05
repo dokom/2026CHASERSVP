@@ -9,7 +9,7 @@ import { Field } from '@/components/admin/field'
 import { StatusPill } from '@/components/admin/status-pill'
 import { formatInviteNumber } from '@/lib/invites/numbering'
 import {
-  updateInviteAction, deleteInviteAction, regenerateTokenAction, resolveExtraSeatsAction,
+  updateInviteAction, deleteInviteAction, regenerateTokenAction,
   addGuestAction, updateGuestAction, removeGuestAction,
 } from '../actions'
 import { INVITE_REVEAL_COOKIE, INVITE_REVEAL_SEEN_COOKIE } from '@/lib/validation/invites'
@@ -89,27 +89,6 @@ export default async function InviteDetailPage({
           <Script id={`invite-reveal-seen-${invite.id}`} strategy="afterInteractive" nonce={nonce}>
             {markRevealSeenScript(invite.id)}
           </Script>
-        </div>
-      ) : null}
-
-      {invite.extraSeatsStatus === 'PENDING' ? (
-        <div className="rounded border border-[var(--color-accent)] p-4">
-          <p className="mb-3 text-sm">
-            Requested {invite.extraSeatsRequested} extra seat(s).
-            {invite.extraSeatsReason ? ` Reason: ${invite.extraSeatsReason}` : ''}
-          </p>
-          <div className="flex gap-3">
-            {(['APPROVED', 'DENIED'] as const).map((decision) => (
-              <form key={decision} action={resolveExtraSeatsAction}>
-                <CsrfInput />
-                <input type="hidden" name="id" value={invite.id} />
-                <input type="hidden" name="decision" value={decision} />
-                <button type="submit" className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm">
-                  {decision === 'APPROVED' ? 'Approve' : 'Deny'}
-                </button>
-              </form>
-            ))}
-          </div>
         </div>
       ) : null}
 

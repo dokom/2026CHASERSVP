@@ -25,9 +25,6 @@ export type GuestInvite = {
   seatsAllotted: number
   status: InviteStatus
   tableNumber: string | null
-  extraSeatsRequested: number
-  extraSeatsStatus: 'NONE' | 'PENDING' | 'APPROVED' | 'DENIED'
-  extraSeatsReason: string | null
   respondedAt: Date | null
   guests: GuestRow[]
 }
@@ -43,9 +40,6 @@ const SELECT = {
   seatsAllotted: true,
   status: true,
   tableNumber: true,
-  extraSeatsRequested: true,
-  extraSeatsStatus: true,
-  extraSeatsReason: true,
   respondedAt: true,
   guests: {
     select: {

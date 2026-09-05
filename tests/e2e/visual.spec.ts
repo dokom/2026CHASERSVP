@@ -68,8 +68,6 @@ async function restoreFixtureState(): Promise<void> {
       data: {
         status: 'ATTENDING',
         respondedAt: new Date('2026-08-01T12:00:00Z'),
-        extraSeatsRequested: 0,
-        extraSeatsStatus: 'NONE',
       },
     })
 

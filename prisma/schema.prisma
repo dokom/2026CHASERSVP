@@ -20,13 +20,6 @@ enum InviteStatus {
   PARTIAL
 }
 
-enum ExtraSeatsStatus {
-  NONE
-  PENDING
-  APPROVED
-  DENIED
-}
-
 model AdminUser {
   id                 String         @id @default(auto()) @map("_id") @db.ObjectId
   email              String         @unique
@@ -137,22 +130,19 @@ model TableMarker {
 }
 
 model Invite {
-  id                  String           @id @default(auto()) @map("_id") @db.ObjectId
-  tokenHash           String           @unique
-  tokenCipher         String
-  number              Int              @unique
-  label               String
-  seatsAllotted       Int              @default(1)
-  extraSeatsRequested Int              @default(0)
-  extraSeatsStatus    ExtraSeatsStatus @default(NONE)
-  extraSeatsReason    String?
-  status              InviteStatus     @default(PENDING)
-  tableNumber         String?
-  adminNotes          String?
-  respondedAt         DateTime?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  guests              Guest[]
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  tokenHash     String       @unique
+  tokenCipher   String
+  number        Int          @unique
+  label         String
+  seatsAllotted Int          @default(1)
+  status        InviteStatus @default(PENDING)
+  tableNumber   String?
+  adminNotes    String?
+  respondedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  guests        Guest[]
 
   @@index([status])
   @@index([label])
