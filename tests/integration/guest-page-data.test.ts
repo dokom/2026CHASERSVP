@@ -53,7 +53,7 @@ describe('loadGuestPage', () => {
     expect(data?.window.isOpen).toBe(true)
   })
 
-  it('resolves the table from the invite and finds its marker', async () => {
+  it('resolves one seat per attending guest, from the invite by default', async () => {
     await seedEvent()
     const { invite, token } = await createInvite(testDb, null, {
       label: 'P', seatsAllotted: 1, tableNumber: '12',
@@ -61,32 +61,35 @@ describe('loadGuestPage', () => {
     })
     await confirmParty(invite.id)
     const data = await loadGuestPage(testDb, token, NOW)
-    expect(data?.table).toBe('12')
-    expect(data?.marker).toMatchObject({ tableNumber: '12', x: 0.4, y: 0.6 })
+    expect(data?.seat).toEqual({ shown: true })
+    expect(data?.seats).toEqual([
+      expect.objectContaining({ name: 'A B', isPrimary: true, table: '12', marker: expect.objectContaining({ tableNumber: '12', x: 0.4, y: 0.6 }) }),
+    ])
   })
 
-  it("prefers the primary guest's own table over the invite's", async () => {
+  it("uses each guest's own table over the invite's, and lists a split party in order", async () => {
     await seedEvent()
     const { invite, token } = await createInvite(testDb, null, {
-      label: 'P', seatsAllotted: 1, tableNumber: '12',
+      label: 'P', seatsAllotted: 2, tableNumber: '12',
       primaryGuest: { firstName: 'A', lastName: 'B' },
     })
-    await testDb.guest.updateMany({ where: { inviteId: invite.id }, data: { tableNumber: '3' } })
+    await testDb.guest.create({ data: { inviteId: invite.id, firstName: 'C', lastName: 'D', attending: true, tableNumber: '3' } })
     await confirmParty(invite.id)
     const data = await loadGuestPage(testDb, token, NOW)
-    expect(data?.table).toBe('3')
+    expect(data?.seats.map((s) => [s.name, s.table])).toEqual([['A B', '12'], ['C D', '3']])
+    expect(data?.seats[1]?.marker).toBeNull()
   })
 
-  it('returns a null marker when the table has no placed marker', async () => {
+  it('omits a guest who is not coming, and one with no table, from the seats', async () => {
     await seedEvent()
     const { invite, token } = await createInvite(testDb, null, {
-      label: 'P', seatsAllotted: 1, tableNumber: '99',
-      primaryGuest: { firstName: 'A', lastName: 'B' },
+      label: 'P', seatsAllotted: 3, primaryGuest: { firstName: 'A', lastName: 'B' },
     })
-    await confirmParty(invite.id)
+    await testDb.guest.updateMany({ where: { inviteId: invite.id }, data: { attending: true, tableNumber: '12' } })
+    await testDb.guest.create({ data: { inviteId: invite.id, firstName: 'No', lastName: 'Show', attending: false, tableNumber: '12' } })
+    await testDb.guest.create({ data: { inviteId: invite.id, firstName: 'No', lastName: 'Table', attending: true } })
     const data = await loadGuestPage(testDb, token, NOW)
-    expect(data?.table).toBe('99')
-    expect(data?.marker).toBeNull()
+    expect(data?.seats.map((s) => s.name)).toEqual(['A B'])
   })
 
   it('reports a closed window after the deadline', async () => {

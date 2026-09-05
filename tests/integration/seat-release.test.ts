@@ -56,8 +56,7 @@ describe('loadGuestPage seat gate', () => {
     const token = await seatedParty(true)
     const data = await loadGuestPage(testDb, token, NOW)
     expect(data?.seat).toEqual({ shown: false, reason: 'NOT_RELEASED' })
-    expect(data?.table).toBeNull()
-    expect(data?.marker).toBeNull()
+    expect(data?.seats).toEqual([])
   })
 
   it('withholds the table from an unconfirmed guest after release', async () => {
@@ -65,7 +64,7 @@ describe('loadGuestPage seat gate', () => {
     const token = await seatedParty(null)
     const data = await loadGuestPage(testDb, token, NOW)
     expect(data?.seat).toEqual({ shown: false, reason: 'NOT_CONFIRMED' })
-    expect(data?.table).toBeNull()
+    expect(data?.seats).toEqual([])
   })
 
   it('withholds the table from a guest who declined', async () => {
@@ -79,8 +78,8 @@ describe('loadGuestPage seat gate', () => {
     const token = await seatedParty(true)
     const data = await loadGuestPage(testDb, token, NOW)
     expect(data?.seat).toEqual({ shown: true })
-    expect(data?.table).toBe('12')
-    expect(data?.marker).toMatchObject({ tableNumber: '12' })
+    expect(data?.seats).toHaveLength(1)
+    expect(data?.seats[0]).toMatchObject({ table: '12', marker: expect.objectContaining({ tableNumber: '12' }) })
   })
 
   it('treats an unassigned placeholder as unconfirmed', async () => {

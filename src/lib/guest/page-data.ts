@@ -1,27 +1,50 @@
 import type { PrismaClient } from '@prisma/client'
-import { resolveInviteByToken, type GuestInvite } from './resolve'
+import { resolveInviteByToken, type GuestInvite, type GuestRow } from './resolve'
 import { getEvent, type EventDetail, type TableMarkerRow } from '@/lib/events/repository'
 import { rsvpWindow, type RsvpWindow } from './deadline'
-import { seatVisibility, type SeatVisibility } from './seat-reveal'
+import { seatVisibility, partySeatVisibility, type SeatVisibility } from './seat-reveal'
+
+/** One attending guest's table, present only while they are allowed to see it. */
+export type Seat = {
+  guestId: string
+  name: string
+  isPrimary: boolean
+  table: string
+  marker: TableMarkerRow | null
+}
 
 export type GuestPageData = {
   invite: GuestInvite
   event: EventDetail
   window: RsvpWindow
   /**
-   * The party's table and its floorplan marker, present only while the
-   * guest is allowed to see them — see `seat`. Kept null otherwise so the
-   * page cannot render a table number it was supposed to withhold.
+   * The party's showable seats, in party order (primary first). Empty
+   * unless `seat.shown`, so the page cannot render a table it was supposed
+   * to withhold.
    */
-  table: string | null
-  marker: TableMarkerRow | null
+  seats: Seat[]
   seat: SeatVisibility
+}
+
+/** Spec §8: a guest's own table overrides the invite's, so a split party sends each person to the right one. */
+function resolvedTable(guest: GuestRow, invite: GuestInvite): string | null {
+  return guest.tableNumber ?? invite.tableNumber ?? null
+}
+
+function toSeat(guest: GuestRow, table: string, markers: TableMarkerRow[]): Seat {
+  return {
+    guestId: guest.id,
+    name: `${guest.firstName} ${guest.lastName}`.trim(),
+    isPrimary: guest.isPrimary,
+    table,
+    marker: markers.find((candidate) => candidate.tableNumber === table) ?? null,
+  }
 }
 
 /**
  * Everything the guest page renders, in one call.
  *
- * Returns null both for an unknown token and for an unconfigured event — the
+ * Returns null both for an unknown token and for an unconfigured event: the
  * page renders the same "we could not find your invitation" state either way,
  * because distinguishing them for the visitor would leak whether a token is
  * merely wrong or genuinely valid.
@@ -34,27 +57,27 @@ export async function loadGuestPage(
   const [invite, event] = await Promise.all([resolveInviteByToken(db, token), getEvent(db)])
   if (!invite || !event) return null
 
-  // Spec §8: a guest's own table overrides the invite's, so a party split
-  // across tables still sends each person to the right one.
   const primary = invite.guests.find((guest) => guest.isPrimary) ?? invite.guests[0]
-  const assignedTable = primary?.tableNumber ?? invite.tableNumber ?? null
+  const perGuest = invite.guests.map((guest) => ({ guest, table: resolvedTable(guest, invite) }))
 
-  const seat = seatVisibility({
+  const seat = partySeatVisibility({
     seatsReleasedAt: event.seatsReleasedAt,
     primaryAttending: primary?.attending,
-    table: assignedTable,
+    guests: perGuest.map(({ guest, table }) => ({ attending: guest.attending, table })),
   })
-  const table = seat.shown ? assignedTable : null
-  const marker = table
-    ? (event.tableMarkers.find((candidate) => candidate.tableNumber === table) ?? null)
-    : null
+
+  const seats = seat.shown
+    ? perGuest
+        .filter(({ guest, table }) =>
+          seatVisibility({ seatsReleasedAt: event.seatsReleasedAt, attending: guest.attending, table }).shown)
+        .map(({ guest, table }) => toSeat(guest, table!, event.tableMarkers))
+    : []
 
   return {
     invite,
     event: { ...event, mealOptions: event.mealOptions.filter((meal) => meal.isActive) },
     window: rsvpWindow(event.rsvpDeadline, now),
-    table,
-    marker,
+    seats,
     seat,
   }
 }
