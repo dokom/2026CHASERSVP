@@ -87,6 +87,15 @@ describe('parseInviteCsv', () => {
     expect(rows[1]?.errors.join(' ')).toMatch(/duplicate/i)
   })
 
+  it('flags a label that repeats within the file, keeping the first', () => {
+    const csv = `${HEADER}\n002,1,,Ada,Okafor,,,,\n002,1,,Sam,Reyes,,,,\n003,1,,Mira,L,,,,`
+    const { rows } = parseInviteCsv(csv)
+    expect(rows[0]?.errors).toEqual([])
+    expect(rows[1]?.errors).toEqual(['duplicate label in file'])
+    expect(rows[1]?.data).toBeNull()
+    expect(rows[2]?.errors).toEqual([])
+  })
+
   it('trims surrounding whitespace', () => {
     const csv = `${HEADER}\n"  Reyes Party ",2,, Jordan , Reyes ,,,,`
     const { rows } = parseInviteCsv(csv)

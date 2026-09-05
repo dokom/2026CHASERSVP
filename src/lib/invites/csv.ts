@@ -50,11 +50,17 @@ function validateRow(
   raw: Record<string, string>,
   rowNumber: number,
   seenEmails: Set<string>,
+  seenLabels: Set<string>,
 ): ParsedRow {
   const errors: string[] = []
 
   const label = cell(raw, 'label')
   if (!label) errors.push('label is required')
+  if (label && seenLabels.has(label)) {
+    errors.push('duplicate label in file')
+  } else if (label) {
+    seenLabels.add(label)
+  }
 
   const firstName = cell(raw, 'primaryFirstName')
   if (!firstName) errors.push('primaryFirstName is required')
@@ -151,10 +157,11 @@ export function parseInviteCsv(text: string): { headerErrors: string[]; rows: Pa
   if (headerErrors.length) return { headerErrors, rows: [] }
 
   const seenEmails = new Set<string>()
+  const seenLabels = new Set<string>()
   const rows = dataRows
     .filter((row) => row.fields.some((v) => (v ?? '').trim() !== ''))
     // Row 1 is the header, so data rows start at 2 — matching what the operator sees.
-    .map((row) => validateRow(toRecord(headers, row.fields), row.line, seenEmails))
+    .map((row) => validateRow(toRecord(headers, row.fields), row.line, seenEmails, seenLabels))
 
   return { headerErrors: [], rows }
 }
