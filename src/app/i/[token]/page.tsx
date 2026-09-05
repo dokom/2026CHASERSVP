@@ -16,7 +16,7 @@ import { Evening } from '@/components/motion/evening'
 import { SeatAct } from '@/components/motion/seat'
 import { Countdown } from '@/components/guest/countdown'
 import type { SeatVisibility } from '@/lib/guest/seat-reveal'
-import { RsvpForm } from './rsvp-form'
+import { RsvpForm, type PartyMember } from './rsvp-form'
 
 /** Why the table is still hidden, in the guest's terms. */
 function seatPendingCopy(seat: SeatVisibility, isAssigned: boolean): string {
@@ -64,6 +64,11 @@ export default async function GuestPage({
   // A printed placeholder nobody has been assigned to yet: greet by number,
   // and hold the RSVP until the organiser attaches a name.
   const isAssigned = invite.guests.length > 0
+  // Only what the RSVP form needs to render and submit — never the table,
+  // contact, or dietary/accessibility fields that ride along on `invite`.
+  const party: PartyMember[] = invite.guests.map(({ id, firstName, lastName, isPrimary, attending }) => ({
+    id, firstName, lastName, isPrimary, attending,
+  }))
 
   return (
     <MotionProvider>
@@ -158,7 +163,7 @@ export default async function GuestPage({
               you can respond here.
             </p>
           ) : window.isOpen ? (
-            <RsvpForm token={token} invite={invite} csrf={csrf} />
+            <RsvpForm token={token} guests={party} csrf={csrf} />
           ) : (
             <p role="status" className="rounded border border-[var(--color-border)] p-4">
               RSVPs closed on{' '}

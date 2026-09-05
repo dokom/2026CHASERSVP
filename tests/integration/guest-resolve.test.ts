@@ -17,7 +17,7 @@ describe('resolveInviteByToken', () => {
   it('resolves an invite from its plaintext token', async () => {
     const { token } = await createInvite(testDb, null, base)
     const invite = await resolveInviteByToken(testDb, token)
-    expect(invite).toMatchObject({ label: 'Reyes Party', seatsAllotted: 2, tableNumber: '12' })
+    expect(invite).toMatchObject({ label: 'Reyes Party', tableNumber: '12' })
   })
 
   it('includes the party, primary guest first', async () => {

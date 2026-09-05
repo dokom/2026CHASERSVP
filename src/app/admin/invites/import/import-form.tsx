@@ -9,6 +9,8 @@ export function ImportForm({ csrf }: { csrf: string }) {
   const errorRows = state?.rows.filter((r) => r.errors.length) ?? []
   const count = (action: 'create' | 'update' | 'skip') =>
     Object.values(state?.actions ?? {}).filter((a) => a === action).length
+  const skipCount = count('skip')
+  const importCount = readyCount - skipCount
   const skipRows = Object.entries(state?.skipReasons ?? {})
 
   return (
@@ -37,8 +39,9 @@ export function ImportForm({ csrf }: { csrf: string }) {
       {state && !state.headerErrors.length ? (
         <>
           <p className="text-sm">
-            {readyCount} row{readyCount === 1 ? '' : 's'} ready to import
-            {count('update') ? `: ${count('update')} will update an existing invite, ${count('create')} will create a new one` : ''}
+            {importCount} row{importCount === 1 ? '' : 's'} ready to import:{' '}
+            {count('update')} will update an existing invite, {count('create')} will create a new one
+            {skipCount ? `, ${skipCount} will be skipped` : ''}
             {errorRows.length ? `. ${errorRows.length} with errors (they will be skipped)` : ''}
           </p>
           {skipRows.length ? (
@@ -57,7 +60,7 @@ export function ImportForm({ csrf }: { csrf: string }) {
             </ul>
           ) : null}
 
-          {readyCount > 0 ? (
+          {importCount > 0 ? (
             <form action={commitCsvAction}>
               <input type="hidden" name="csrf" value={csrf} />
               <input type="hidden" name="payload" value={state.payload} />
@@ -65,7 +68,7 @@ export function ImportForm({ csrf }: { csrf: string }) {
                 type="submit"
                 className="rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
               >
-                Import {readyCount} invite{readyCount === 1 ? '' : 's'}
+                Import {importCount} invite{importCount === 1 ? '' : 's'}
               </button>
             </form>
           ) : null}

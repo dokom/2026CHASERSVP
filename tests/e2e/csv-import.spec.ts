@@ -31,7 +31,7 @@ test.describe('CSV import', () => {
     const stamp = Date.now()
     await upload(page, `${HEADER}\nImported ${stamp},2,,Ada,Okafor,ada${stamp}@example.com,,,`)
 
-    await expect(page.getByText('1 row ready to import')).toBeVisible()
+    await expect(page.getByText(/1 row ready to import: 0 will update an existing invite, 1 will create/)).toBeVisible()
     await page.getByRole('button', { name: 'Import 1 invite' }).click()
     await expect(page).toHaveURL(/\/admin\/invites/)
     await expect(page.getByRole('cell', { name: `Imported ${stamp}` })).toBeVisible()
@@ -77,8 +77,7 @@ test.describe('CSV import', () => {
     const stamp = Date.now()
     await upload(page, `${HEADER}\n${label},2,,Priya,Natarajan,priya${stamp}@example.com,,,`)
 
-    await expect(page.getByText('1 row ready to import')).toBeVisible()
-    await expect(page.getByText(/1 will update an existing invite/)).toBeVisible()
+    await expect(page.getByText(/1 row ready to import: 1 will update an existing invite, 0 will create/)).toBeVisible()
     await page.getByRole('button', { name: 'Import 1 invite' }).click()
     await expect(page).toHaveURL(/updated=1/)
 

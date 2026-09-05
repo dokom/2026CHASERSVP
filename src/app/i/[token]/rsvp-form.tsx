@@ -3,16 +3,26 @@
 import { useActionState, useState } from 'react'
 import { GuestToggle } from '@/components/guest/guest-toggle'
 import { Sealed } from '@/components/motion/sealed'
-import type { GuestInvite } from '@/lib/guest/resolve'
 import { submitRsvpAction, type RsvpFormState } from './actions'
 
 const INITIAL: RsvpFormState = { status: 'idle' }
 
 type Selection = Readonly<Record<number, boolean>>
 
+/** The narrow, wire-safe slice of a party member the RSVP form needs. No
+ * table, email, phone, dietary or accessibility data — that stays server-side
+ * until the seat gate releases it. */
+export type PartyMember = {
+  id: string
+  firstName: string
+  lastName: string
+  isPrimary: boolean
+  attending: boolean | null
+}
+
 /** Whoever already said yes comes back highlighted; everyone else starts off. */
-function previousSelection(invite: GuestInvite): Selection {
-  return Object.fromEntries(invite.guests.map((guest, index) => [index, guest.attending === true]))
+function previousSelection(guests: PartyMember[]): Selection {
+  return Object.fromEntries(guests.map((guest, index) => [index, guest.attending === true]))
 }
 
 function toggled(selection: Selection, index: number): Selection {
@@ -25,18 +35,18 @@ function toggled(selection: Selection, index: number): Selection {
  * companions can be added with one tap each, named or not.
  */
 export function RsvpForm({
-  token, invite, csrf,
+  token, guests, csrf,
 }: {
   token: string
-  invite: GuestInvite
+  guests: PartyMember[]
   csrf: string
 }) {
   const [state, action, pending] = useActionState(submitRsvpAction, INITIAL)
-  const [selection, setSelection] = useState<Selection>(() => previousSelection(invite))
+  const [selection, setSelection] = useState<Selection>(() => previousSelection(guests))
   // Seats the guest is filling on this visit, beyond the party already known.
   const [companions, setCompanions] = useState(0)
 
-  const known = invite.guests
+  const known = guests
   const host = known.find((guest) => guest.isPrimary) ?? known[0]
 
   if (state.status === 'done') {

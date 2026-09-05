@@ -106,11 +106,15 @@ guest and loses the party-level one.
 
 **Update semantics**: `label`, `seatsAllotted`, `tableNumber`,
 `adminNotes` are written from the row (empty cells clear the optional
-ones, matching create). The primary guest is updated in place when one
-exists, else created with `isPrimary: true`. Token, number, status,
-`respondedAt`, other guests and check-in data are untouched. Note that
-the second matching rule means the label can change on update: "002"
-becomes "Reyes Party" and the number stays the key for next time.
+ones, matching create); the primary guest's email, company and title
+likewise. The primary guest is updated in place when one exists, else
+created with `isPrimary: true`. Token, number, status, `respondedAt`,
+other guests and check-in data are untouched. A row matched by its bare
+number is written with that number as its label, so a spreadsheet keyed
+on card numbers keeps those labels and the guests' names live on the
+guest record. Renaming a card ("002" to "Reyes Party") is done on the
+admin invite page, after which the new name is the key for the next
+import.
 
 **Email dedupe**: the existing "skip if primary email already exists"
 rule applies to create rows only. An update row may carry an email that

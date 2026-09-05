@@ -22,7 +22,6 @@ export type GuestRow = {
 export type GuestInvite = {
   id: string
   label: string
-  seatsAllotted: number
   status: InviteStatus
   tableNumber: string | null
   respondedAt: Date | null
@@ -37,7 +36,6 @@ export type GuestInvite = {
 const SELECT = {
   id: true,
   label: true,
-  seatsAllotted: true,
   status: true,
   tableNumber: true,
   respondedAt: true,

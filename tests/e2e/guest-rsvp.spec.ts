@@ -146,6 +146,10 @@ test.describe('guest RSVP', () => {
     await expect(seconds).toBeVisible()
     const before = await seconds.textContent()
     await expect(seconds).not.toHaveText(before ?? '', { timeout: 3_000 })
+
+    // The withheld table must not ride along in the page payload either.
+    expect(await page.content()).not.toContain('tableNumber')
+    expect(await page.content()).not.toMatch(/Table 12/)
   })
 
   test('a printed placeholder greets by number and holds the RSVP until someone is assigned', async ({ page }) => {
