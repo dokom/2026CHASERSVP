@@ -12,7 +12,6 @@ export type RsvpResult =
       reason:
         | 'NOT_FOUND'
         | 'CLOSED'
-        | 'SEAT_LIMIT'
         | 'FOREIGN_GUEST'
         | 'DUPLICATE_GUEST'
         | 'INVALID_MEAL_OPTION'
@@ -24,7 +23,6 @@ type KnownResponse = GuestResponse & { id: string }
 
 const SELECT_INVITE = {
   id: true,
-  seatsAllotted: true,
   guests: {
     select: { id: true, isPrimary: true, firstName: true, lastName: true },
     orderBy: { createdAt: 'asc' as const },
@@ -108,16 +106,6 @@ export async function submitRsvp(
   const idProblem = checkSubmittedIds(submittedIds, invite.guests)
   if (idProblem) return { ok: false, reason: idProblem }
 
-  // The party after this submission is everyone already known plus every
-  // companion being added. Checked against the allowance BEFORE anything is
-  // written, so a stripped or replayed form can never mint phantom seats,
-  // and nothing ever has to be deleted to make room. That is what used to put
-  // a checked-in guest's record at risk.
-  const companions = submission.guests.filter((g) => !g.id && g.attending)
-  if (invite.guests.length + companions.length > invite.seatsAllotted) {
-    return { ok: false, reason: 'SEAT_LIMIT' }
-  }
-
   if (!(await hasOnlyActiveMeals(db, submission.guests))) return { ok: false, reason: 'INVALID_MEAL_OPTION' }
 
   const host = invite.guests.find((g) => g.isPrimary) ?? invite.guests[0]
@@ -139,17 +127,7 @@ export async function submitRsvp(
 
     await tx.invite.update({
       where: { id: invite.id },
-      data: {
-        status: nextStatus,
-        respondedAt: now,
-        ...(submission.extraSeatsRequested > 0
-          ? {
-              extraSeatsRequested: submission.extraSeatsRequested,
-              extraSeatsStatus: 'PENDING' as const,
-              extraSeatsReason: submission.extraSeatsReason || null,
-            }
-          : {}),
-      },
+      data: { status: nextStatus, respondedAt: now },
     })
 
     await writeAudit(tx, {
@@ -157,7 +135,7 @@ export async function submitRsvp(
       action: 'rsvp.submit',
       entity: 'Invite',
       entityId: invite.id,
-      meta: { attending: partySize > 0, partySize, extraSeatsRequested: submission.extraSeatsRequested },
+      meta: { attending: partySize > 0, partySize },
     })
 
     return nextStatus

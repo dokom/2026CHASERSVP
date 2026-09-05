@@ -58,11 +58,7 @@ export async function submitRsvpAction(
   // re-resolves it against the stored hash rather than trusting it blindly.
   const token = String(formData.get('token') ?? '')
 
-  const parsed = rsvpSubmissionSchema.safeParse({
-    guests: collectGuests(formData),
-    extraSeatsRequested: formData.get('extraSeatsRequested') ?? 0,
-    extraSeatsReason: formData.get('extraSeatsReason') ?? '',
-  })
+  const parsed = rsvpSubmissionSchema.safeParse({ guests: collectGuests(formData) })
   if (!parsed.success) {
     const issue = parsed.error.issues[0]
     const message = issue?.path.at(-1) === 'attending' ? UNANSWERED : issue?.message ?? 'Please check your answers.'
@@ -80,11 +76,7 @@ export async function submitRsvpAction(
     // NOT_FOUND and FOREIGN_GUEST deliberately share a message: distinguishing
     // them would confirm whether a token or guest id is real.
     const message =
-      result.reason === 'CLOSED'
-        ? 'RSVPs have closed. Please contact the organiser.'
-        : result.reason === 'SEAT_LIMIT'
-          ? 'That is more guests than your invitation allows.'
-          : GENERIC_FAILURE
+      result.reason === 'CLOSED' ? 'RSVPs have closed. Please contact the organiser.' : GENERIC_FAILURE
     return { status: 'error', message }
   }
 

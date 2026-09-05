@@ -59,18 +59,21 @@ describe('rsvpSubmissionSchema', () => {
     expect(rsvpSubmissionSchema.safeParse({ guests: [{ id: ID, attending: false }] }).success).toBe(true)
   })
 
-  it('defaults extra seats to zero and coerces a numeric string', () => {
-    expect(rsvpSubmissionSchema.parse(submission).extraSeatsRequested).toBe(0)
-    expect(rsvpSubmissionSchema.parse({ ...submission, extraSeatsRequested: '2' }).extraSeatsRequested).toBe(2)
+  it('accepts a large party: there is no seat allowance', () => {
+    const many = Array.from({ length: 60 }, () => ({ attending: true }))
+    expect(rsvpSubmissionSchema.safeParse({ guests: many }).success).toBe(true)
   })
 
-  it('rejects negative or absurd extra-seat requests', () => {
-    expect(rsvpSubmissionSchema.safeParse({ ...submission, extraSeatsRequested: -1 }).success).toBe(false)
-    expect(rsvpSubmissionSchema.safeParse({ ...submission, extraSeatsRequested: 999 }).success).toBe(false)
+  it('caps a single submission at 100 entries as a request-size bound', () => {
+    const many = Array.from({ length: 101 }, () => ({ attending: true }))
+    const result = rsvpSubmissionSchema.safeParse({ guests: many })
+    expect(result.success).toBe(false)
+    expect(result.success ? '' : result.error.issues[0]?.message).toMatch(/too many people/)
   })
 
-  it('caps the party size', () => {
-    const many = Array.from({ length: 41 }, () => ({ attending: true }))
-    expect(rsvpSubmissionSchema.safeParse({ guests: many }).success).toBe(false)
+  it('has no extra-seats fields', () => {
+    const parsed = rsvpSubmissionSchema.parse({ ...submission, extraSeatsRequested: 3, extraSeatsReason: 'x' })
+    expect(parsed).not.toHaveProperty('extraSeatsRequested')
+    expect(parsed).not.toHaveProperty('extraSeatsReason')
   })
 })
