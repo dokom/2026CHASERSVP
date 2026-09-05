@@ -21,8 +21,8 @@ function toggled(selection: Selection, index: number): Selection {
 
 /**
  * Tap the names of everyone who is coming, then confirm. Nothing to type.
- * Contact details stay whatever the organiser imported; a spare seat can be
- * taken by an unnamed companion ("Guest of <host>") with one tap.
+ * Contact details stay whatever the organiser imported; any number of
+ * companions can be added with one tap each, named or not.
  */
 export function RsvpForm({
   token, invite, csrf,
@@ -38,7 +38,6 @@ export function RsvpForm({
 
   const known = invite.guests
   const host = known.find((guest) => guest.isPrimary) ?? known[0]
-  const seatsRemaining = invite.seatsAllotted - known.length - companions
 
   if (state.status === 'done') {
     // Shared between the visible text and data-shimmer-text: the CSS
@@ -96,7 +95,7 @@ export function RsvpForm({
                 index={index}
                 id={null}
                 name={`Guest of ${host?.firstName ?? 'the host'}`}
-                note={`(seat ${index + 1})`}
+                note={`(guest ${offset + 1})`}
                 selected={selection[index] === true}
                 onToggle={() => setSelection((current) => toggled(current, index))}
               />
@@ -105,15 +104,13 @@ export function RsvpForm({
         })}
       </ul>
 
-      {seatsRemaining > 0 ? (
-        <button
-          type="button"
-          onClick={addCompanion}
-          className="rounded border border-[var(--color-border)] px-4 py-2 text-sm"
-        >
-          Bring a guest ({seatsRemaining} seat{seatsRemaining === 1 ? '' : 's'} remaining)
-        </button>
-      ) : null}
+      <button
+        type="button"
+        onClick={addCompanion}
+        className="rounded border border-[var(--color-border)] px-4 py-2 text-sm"
+      >
+        Bring a guest
+      </button>
 
       {state.status === 'error' ? (
         <p role="alert" className="text-sm text-[var(--color-danger)]">{state.message}</p>

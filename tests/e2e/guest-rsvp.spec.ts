@@ -174,13 +174,38 @@ test.describe('guest RSVP', () => {
     // The fixture party has two seats and one known guest; the second seat is
     // taken with a tap and arrives already highlighted.
     const bring = page.getByRole('button', { name: /Bring a guest/ })
-    if (await bring.isVisible()) {
-      await bring.click()
-      await expect(page.getByTestId('guest-response').last()).toContainText('Guest of Riley')
-    }
+    await bring.click()
+    await expect(page.getByTestId('guest-response').last()).toContainText('Guest of Riley')
     await setEveryone(page, true)
     await confirm(page)
     await expect(page.getByTestId('rsvp-confirmed')).toContainText('look forward')
+  })
+
+  test('a guest can bring five companions and name them', async ({ page }, testInfo) => {
+    const token = await freshInviteToken(`E2E Big Party ${testInfo.project.name} ${Date.now()}`)
+    await page.goto(`/i/${token}`)
+    const bring = page.getByRole('button', { name: /Bring a guest/ })
+    for (let i = 0; i < 5; i++) {
+      await expect(bring).toBeVisible()
+      await bring.click()
+    }
+    await expect(page.getByTestId('guest-response')).toHaveCount(6)
+    // The button never disappears: there is no allowance to run out of.
+    await expect(bring).toBeVisible()
+
+    const lastRow = page.getByTestId('companion-row').last()
+    await lastRow.getByLabel('First name (optional)').fill('Sam')
+    await lastRow.getByLabel('Last name (optional)').fill('Haddad')
+
+    await setEveryone(page, true)
+    await confirm(page)
+    await expect(page.getByTestId('rsvp-confirmed')).toContainText('look forward')
+
+    await page.reload()
+    const rows = page.getByTestId('guest-response')
+    await expect(rows).toHaveCount(6)
+    await expect(rows.last()).toContainText('Sam Haddad')
+    await expect(rows.nth(1)).toContainText('Guest of Noor')
   })
 
   test('remembers the answer on a return visit', async ({ page }) => {
