@@ -17,10 +17,7 @@ export function PartyCard({
 }) {
   return (
     <section aria-labelledby="party-heading" className="space-y-3">
-      <h2 id="party-heading" className="font-serif text-2xl">
-        {party.label}
-        {party.tableNumber ? <span className="ml-3 text-[var(--accent-ink)]">Table {party.tableNumber}</span> : null}
-      </h2>
+      <h2 id="party-heading" className="font-serif text-2xl">{party.label}</h2>
       <ul className="space-y-2">
         {party.guests.map((guest) => {
           const arrived = guest.checkedInAt !== null
@@ -38,6 +35,9 @@ export function PartyCard({
                 <span>
                   <span className="block text-lg">{guest.badgeName || `${guest.firstName} ${guest.lastName}`}</span>
                   {guest.company ? <span className="block text-sm text-[var(--text-muted)]">{guest.company}</span> : null}
+                  {guest.tableNumber ? (
+                    <span className="block text-sm text-[var(--accent-ink)]">Table {guest.tableNumber}</span>
+                  ) : null}
                   {guest.attending === false ? (
                     <span className="block text-xs text-[var(--danger)]">Declined on RSVP</span>
                   ) : null}

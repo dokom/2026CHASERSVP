@@ -47,7 +47,6 @@ export type PartyGuest = {
 export type Party = {
   inviteId: string
   label: string
-  tableNumber: string | null
   guests: PartyGuest[]
 }
 
@@ -81,7 +80,10 @@ export async function resolvePartyByToken(db: PrismaClient, token: string): Prom
     },
   })
   if (!invite) return null
-  return { inviteId: invite.id, label: invite.label, tableNumber: invite.tableNumber, guests: invite.guests }
+  // Spec §8: a guest's own table overrides the invite's, so the door sends
+  // each person of a split party to the right table.
+  const guests = invite.guests.map((guest) => ({ ...guest, tableNumber: guest.tableNumber ?? invite.tableNumber }))
+  return { inviteId: invite.id, label: invite.label, guests }
 }
 
 type ScopedGuest = { id: string; attending: boolean | null; checkedInAt: Date | null }

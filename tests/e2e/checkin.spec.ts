@@ -24,8 +24,8 @@ function desktopOnly(testInfo: TestInfo): void {
 const appUrl = process.env.APP_URL ?? 'http://localhost:3000'
 const CHECKIN_URL = `${appUrl}/i/${E2E_CHECKIN_TOKEN}`
 
-type ResolvedGuest = { id: string; firstName: string; checkedInAt: string | null }
-type ResolvedParty = { inviteId: string; label: string; tableNumber: string | null; guests: ResolvedGuest[] }
+type ResolvedGuest = { id: string; firstName: string; tableNumber: string | null; checkedInAt: string | null }
+type ResolvedParty = { inviteId: string; label: string; guests: ResolvedGuest[] }
 
 /** Pastes the invitation link into the manual field and returns the resolved party. */
 async function resolveParty(page: Page): Promise<ResolvedParty> {
@@ -78,10 +78,10 @@ test.describe('door check-in', () => {
   test('pasting the invitation link resolves the party with its table number', async ({ page }) => {
     const party = await resolveParty(page)
     expect(party.label).toBe('E2E Checkin Party')
-    expect(party.tableNumber).toBe('7')
+    expect(party.guests.map((g) => g.tableNumber)).toEqual(['7', '7', '7'])
 
     await expect(page.getByRole('heading', { name: /E2E Checkin Party/ })).toBeVisible()
-    await expect(page.getByText('Table 7')).toBeVisible()
+    await expect(guestRow(page, 'Morgan')).toContainText('Table 7')
     // Dana was seeded already checked in — resolving must surface that
     // without any tap from this test.
     await expect(guestRow(page, 'Dana')).toContainText('tap to undo')

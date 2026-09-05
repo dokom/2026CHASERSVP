@@ -17,7 +17,7 @@ async function seed() {
     primaryGuest: { firstName: 'Jordan', lastName: 'Reyes' },
   })
   const sam = await testDb.guest.create({
-    data: { inviteId: invite.id, firstName: 'Sam', lastName: 'Reyes', attending: true },
+    data: { inviteId: invite.id, firstName: 'Sam', lastName: 'Reyes', attending: true, tableNumber: '3' },
   })
   await testDb.guest.updateMany({ where: { inviteId: invite.id, isPrimary: true }, data: { attending: true } })
   return { staff, invite, token, sam }
@@ -33,12 +33,12 @@ async function seedOtherParty() {
 }
 
 describe('resolvePartyByToken', () => {
-  it('returns the party with check-in state', async () => {
+  it('returns the party with check-in state and a table per guest', async () => {
     const { token } = await seed()
     const party = await resolvePartyByToken(testDb, token)
     expect(party?.label).toBe('Reyes Party')
-    expect(party?.tableNumber).toBe('12')
-    expect(party?.guests).toHaveLength(2)
+    expect(party).not.toHaveProperty('tableNumber')
+    expect(party?.guests.map((g) => [g.firstName, g.tableNumber])).toEqual([['Jordan', '12'], ['Sam', '3']])
     expect(party?.guests.every((g) => g.checkedInAt === null)).toBe(true)
   })
 
