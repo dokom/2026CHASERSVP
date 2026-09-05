@@ -71,6 +71,16 @@ describe('planImport', () => {
     expect(plans[0]?.plan).toMatchObject({ action: 'update' })
     expect(plans[1]?.plan).toEqual({ action: 'skip', reason: 'email already exists' })
   })
+
+  it('lets only the first of two rows that resolve to the same invite update it', async () => {
+    await createPlaceholderInvites(testDb, null, { count: 2, seatsAllotted: 1 })
+    const plans = await planImport(testDb, [
+      ...rowsFrom(`${HEADER}\n2,1,,Ada,Okafor,,,,`),
+      ...rowsFrom(`${HEADER}\n002,1,,Sam,Reyes,,,,`),
+    ])
+    expect(plans[0]?.plan).toMatchObject({ action: 'update' })
+    expect(plans[1]?.plan).toEqual({ action: 'skip', reason: 'same invite as an earlier row' })
+  })
 })
 
 describe('commitInviteImport', () => {
@@ -79,6 +89,7 @@ describe('commitInviteImport', () => {
     const result = await commitInviteImport(testDb, null, rows)
     expect(result).toEqual({ created: 2, updated: 0, skipped: [] })
     expect(await testDb.invite.count()).toBe(2)
+    expect(await testDb.guest.count()).toBe(2)
     expect(await testDb.guest.count({ where: { isPrimary: true } })).toBe(2)
   })
 
@@ -177,5 +188,17 @@ describe('commitInviteImport', () => {
     await commitInviteImport(testDb, null, rowsFrom(`${HEADER}\nA,1,,Ada,Okafor,ada@example.com,,,`))
     const found = await existingEmails(testDb, ['ada@example.com', 'nobody@example.com'])
     expect([...found]).toEqual(['ada@example.com'])
+  })
+
+  it('never gives one invite two primary guests when two rows alias it', async () => {
+    await createPlaceholderInvites(testDb, null, { count: 2, seatsAllotted: 1 })
+    const result = await commitInviteImport(testDb, null, [
+      ...rowsFrom(`${HEADER}\n2,1,,Ada,Okafor,,,,`),
+      ...rowsFrom(`${HEADER}\n002,1,,Sam,Reyes,,,,`),
+    ])
+    expect(result).toEqual({ created: 0, updated: 1, skipped: [{ label: '002', reason: 'same invite as an earlier row' }] })
+    const two = await testDb.invite.findUniqueOrThrow({ where: { number: 2 }, include: { guests: true } })
+    expect(two.guests).toHaveLength(1)
+    expect(two.guests[0]).toMatchObject({ firstName: 'Ada', isPrimary: true })
   })
 })

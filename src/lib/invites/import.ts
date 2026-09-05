@@ -7,19 +7,14 @@ import { allocateInviteNumbers } from './repository'
 import { planImport, type PlannedRow } from './import-plan'
 import type { ImportRow } from './csv'
 
+export { existingEmails } from './import-plan'
+
 export const MAX_IMPORT_ROWS = 2000
 
 export type ImportResult = {
   created: number
   updated: number
   skipped: { label: string; reason: string }[]
-}
-
-export async function existingEmails(db: PrismaClient, emails: string[]): Promise<Set<string>> {
-  const wanted = emails.filter(Boolean).map((e) => e.toLowerCase())
-  if (wanted.length === 0) return new Set()
-  const found = await db.guest.findMany({ where: { email: { in: wanted } }, select: { email: true } })
-  return new Set(found.map((g) => g.email!.toLowerCase()))
 }
 
 function inviteFields(row: ImportRow) {
