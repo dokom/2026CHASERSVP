@@ -1,8 +1,20 @@
 import QRCode from 'qrcode'
 import JSZip from 'jszip'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { escapeCsvCell } from '@/lib/guests/export'
 
-export type QrItem = { label: string; url: string }
+/**
+ * `number` is the printed index ("001"), already padded, so every export
+ * format agrees on it; `label` is whatever the admin has named the invite
+ * so far — for a fresh placeholder that is the same string.
+ */
+export type QrItem = { number?: string; label: string; url: string }
+
+/** What is printed under the code and used to name its file. */
+export function qrCaption(item: QrItem): string {
+  if (!item.number) return item.label
+  return item.label === item.number ? item.number : `${item.number} · ${item.label}`
+}
 
 const DEFAULT_SIZE = 600
 
@@ -63,10 +75,26 @@ export async function buildQrZip(items: QrItem[]): Promise<Buffer> {
 
   for (const item of items) {
     const png = await renderQrPng(item.url)
-    zip.file(uniqueName(safeFilename(item.label), used), png)
+    // The number alone names the file: the printer matches "001.png" to
+    // card 001 without caring what the invite is labelled this week.
+    zip.file(uniqueName(safeFilename(item.number ?? item.label), used), png)
   }
 
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
+/**
+ * The printer's manifest: one row per code, so the print shop can lay out
+ * each card's number next to its URL (and generate their own codes if they
+ * prefer). Cells go through the same formula-injection guard as the guest
+ * export — a label is admin-typed text that will open in a spreadsheet.
+ */
+export function buildQrCsv(items: QrItem[]): string {
+  const header = 'number,label,url'
+  const rows = items.map((item) =>
+    [item.number ?? '', item.label, item.url].map(escapeCsvCell).join(','),
+  )
+  return `${[header, ...rows].join('\r\n')}\r\n`
 }
 
 export async function buildQrPdf(items: QrItem[]): Promise<Buffer> {
@@ -115,7 +143,8 @@ async function drawQrCell(
     height: codeSize,
   })
 
-  const label = item.label.length > 32 ? `${item.label.slice(0, 31)}…` : item.label
+  const caption = qrCaption(item)
+  const label = caption.length > 32 ? `${caption.slice(0, 31)}…` : caption
   const labelWidth = font.widthOfTextAtSize(label, 9)
   page.drawText(label, {
     x: cellLeft + (cellWidth - labelWidth) / 2,

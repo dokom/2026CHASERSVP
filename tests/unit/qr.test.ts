@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { PDFDocument } from 'pdf-lib'
 import {
-  inviteUrl, renderQrPng, buildQrZip, buildQrPdf, safeFilename,
+  inviteUrl, renderQrPng, buildQrZip, buildQrPdf, buildQrCsv, qrCaption, safeFilename,
 } from '@/lib/invites/qr'
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47])
@@ -71,6 +71,49 @@ describe('buildQrZip', () => {
   it('produces an empty archive for no items', async () => {
     const archive = await JSZip.loadAsync(await buildQrZip([]))
     expect(Object.keys(archive.files)).toHaveLength(0)
+  })
+
+  it('names numbered codes by their printed number, whatever the label says', async () => {
+    const zip = await buildQrZip([
+      { number: '001', label: '001', url: 'https://x.test/i/a' },
+      { number: '002', label: 'Reyes Party', url: 'https://x.test/i/b' },
+    ])
+    const archive = await JSZip.loadAsync(zip)
+    expect(Object.keys(archive.files).sort()).toEqual(['001.png', '002.png'])
+  })
+})
+
+describe('qrCaption', () => {
+  it('is the bare number for an unassigned placeholder', () => {
+    expect(qrCaption({ number: '001', label: '001', url: 'u' })).toBe('001')
+  })
+
+  it('pairs the number with the label once the invite is named', () => {
+    expect(qrCaption({ number: '001', label: 'Reyes Party', url: 'u' })).toBe('001 · Reyes Party')
+  })
+
+  it('falls back to the label alone without a number', () => {
+    expect(qrCaption({ label: 'Reyes Party', url: 'u' })).toBe('Reyes Party')
+  })
+})
+
+describe('buildQrCsv', () => {
+  it('lists number, label and URL per row for the printer', () => {
+    const csv = buildQrCsv([
+      { number: '001', label: '001', url: 'https://x.test/i/a' },
+      { number: '002', label: 'Reyes Party', url: 'https://x.test/i/b' },
+    ])
+    expect(csv.split(String.fromCharCode(13, 10))).toEqual([
+      'number,label,url',
+      '"001","001","https://x.test/i/a"',
+      '"002","Reyes Party","https://x.test/i/b"',
+      '',
+    ])
+  })
+
+  it('neutralises a label that would open as a spreadsheet formula', () => {
+    const csv = buildQrCsv([{ number: '001', label: '=HYPERLINK("x")', url: 'u' }])
+    expect(csv).toContain('"\'=HYPERLINK(""x"")"')
   })
 })
 
