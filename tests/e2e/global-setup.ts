@@ -88,6 +88,18 @@ export default async function globalSetup(): Promise<void> {
   // before its own resetDb(), and for the same reason.
   assertDistinctDatabases(appUrl, E2E_DATABASE_URL)
 
+  // Drop whatever a previous run left behind BEFORE pushing the schema.
+  // Every collection is wiped below anyway, but a schema change that adds
+  // a unique index (Invite.number did) cannot even be applied while stale
+  // rows lack the field — MongoDB refuses to build the index over
+  // duplicate nulls. Dropping first makes the push unconditional.
+  const stale = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+  try {
+    await stale.$runCommandRaw({ dropDatabase: 1 })
+  } finally {
+    await stale.$disconnect()
+  }
+
   // Push the schema to the e2e database so a fresh machine works with no
   // manual setup. Must happen before the PrismaClient below connects.
   execSync('npx prisma db push --skip-generate --accept-data-loss', {
@@ -165,6 +177,12 @@ export default async function globalSetup(): Promise<void> {
         dressCode: 'Black tie',
         rsvpDeadline,
         floorplanAssetId: floorplan.id,
+        // Seating released from the start: the seat-map specs need a
+        // confirmed party to actually see its table. The gate itself
+        // (hidden until release AND confirmation) is proved by
+        // tests/integration/seat-release.test.ts and, end to end, by the
+        // guest-rsvp and event-config specs.
+        seatsReleasedAt: new Date(),
       },
     })
 

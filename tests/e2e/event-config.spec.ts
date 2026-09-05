@@ -39,6 +39,24 @@ test.describe('event configuration', () => {
     await expect(page.getByLabel('Event name')).toHaveValue(newName)
   })
 
+  test('seating can be hidden from guests and released again', async ({ page }) => {
+    await signInAsAdmin(page)
+    await page.goto('/admin/event')
+
+    // global-setup seeds the event with seating released.
+    const seating = page.locator('[data-seating-release]')
+    await expect(seating).toHaveAttribute('data-seating-release', 'released')
+
+    await page.getByRole('button', { name: 'Hide seating again' }).click()
+    await expect(seating).toHaveAttribute('data-seating-release', 'hidden')
+    await expect(page.getByText('Tables are hidden from every guest')).toBeVisible()
+
+    // Leave the fixture the way the guest specs expect to find it.
+    await page.getByRole('button', { name: 'Release seating to guests' }).click()
+    await expect(seating).toHaveAttribute('data-seating-release', 'released')
+    await expect(page.getByText(/Seating was released on/)).toBeVisible()
+  })
+
   test('rejects an RSVP deadline after the event start with a visible message', async ({ page }) => {
     await signInAsAdmin(page)
     await page.goto('/admin/event')

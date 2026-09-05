@@ -3,6 +3,7 @@ import { generateInviteToken, hashToken } from '@/lib/crypto/tokens'
 import { seal } from '@/lib/crypto/secret-box'
 import { getEnv } from '@/lib/env'
 import { writeAudit } from '@/lib/audit'
+import { allocateInviteNumbers } from './repository'
 import type { ImportRow } from './csv'
 
 export const MAX_IMPORT_ROWS = 2000
@@ -55,12 +56,14 @@ export async function commitInviteImport(
 
   await db.$transaction(
     async (tx) => {
-      for (const row of toCreate) {
+      const numbers = await allocateInviteNumbers(tx, toCreate.length)
+      for (const [index, row] of toCreate.entries()) {
         const token = generateInviteToken()
         await tx.invite.create({
           data: {
             tokenHash: hashToken(token),
             tokenCipher: seal(token, secret),
+            number: numbers[index]!,
             label: row.label,
             seatsAllotted: row.seatsAllotted,
             tableNumber: row.tableNumber || null,

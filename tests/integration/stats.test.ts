@@ -18,7 +18,7 @@ async function seed() {
   })
   const [beef, fish] = event.mealOptions
   const mk = (label: string, status: 'PENDING' | 'ATTENDING' | 'DECLINED' | 'PARTIAL', respondedAt: Date | null, extra: 'NONE' | 'PENDING' | 'APPROVED' | 'DENIED' = 'NONE') =>
-    testDb.invite.create({ data: { tokenHash: label, tokenCipher: 'c', label, status, respondedAt, extraSeatsStatus: extra, seatsAllotted: 2 } })
+    testDb.invite.create({ data: { tokenHash: label, tokenCipher: 'c', number: label.charCodeAt(0), label, status, respondedAt, extraSeatsStatus: extra, seatsAllotted: 2 } })
 
   const a = await mk('A', 'ATTENDING', new Date('2026-09-01T10:00:00Z'))
   const b = await mk('B', 'ATTENDING', new Date('2026-09-01T15:00:00Z'))

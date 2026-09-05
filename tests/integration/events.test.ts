@@ -86,7 +86,7 @@ describe('event repository', () => {
     const seeded = await seedEvent()
     const mealId = await upsertMealOption(testDb, null, seeded.id, { label: 'Beef', sortOrder: 0 })
     const invite = await testDb.invite.create({
-      data: { tokenHash: 'h', tokenCipher: 'c', label: 'Party' },
+      data: { tokenHash: 'h', tokenCipher: 'c', number: 1, label: 'Party' },
     })
     await testDb.guest.create({
       data: { inviteId: invite.id, firstName: 'A', lastName: 'B', mealOptionId: mealId },

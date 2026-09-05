@@ -55,14 +55,19 @@ async function restoreFixtureState(): Promise<void> {
 
     const invite = await prisma.invite.findFirstOrThrow({ where: { label: 'E2E Guest Party' } })
     await prisma.guest.deleteMany({ where: { inviteId: invite.id } })
+    // Riley is pinned as CONFIRMED (not merely reset to unanswered): the
+    // seat map only renders for a confirmed guest once seating is released,
+    // and the guest-page baselines exist to catch regressions in that map.
+    // An unconfirmed Riley would render the live countdown instead — a
+    // ticking clock is unscreenshotable — and the map would go untested.
     await prisma.guest.create({
-      data: { inviteId: invite.id, firstName: 'Riley', lastName: 'Chen', isPrimary: true },
+      data: { inviteId: invite.id, firstName: 'Riley', lastName: 'Chen', isPrimary: true, attending: true },
     })
     await prisma.invite.update({
       where: { id: invite.id },
       data: {
-        status: 'PENDING',
-        respondedAt: null,
+        status: 'ATTENDING',
+        respondedAt: new Date('2026-08-01T12:00:00Z'),
         extraSeatsRequested: 0,
         extraSeatsStatus: 'NONE',
       },
@@ -96,7 +101,11 @@ async function restoreFixtureState(): Promise<void> {
     ))
     await prisma.event.update({
       where: { id: event.id },
-      data: { name: 'The Grand Gala', startsAt: fixedStartsAt },
+      // Seating released (event-config.spec.ts toggles it off and back on;
+      // pin it here so the guest baselines never depend on that order), at
+      // a fixed instant so the admin event screen's "released on …" line
+      // renders identically every run.
+      data: { name: 'The Grand Gala', startsAt: fixedStartsAt, seatsReleasedAt: new Date('2026-08-01T12:00:00Z') },
     })
     await prisma.agendaItem.deleteMany({ where: { eventId: event.id } })
     await prisma.agendaItem.createMany({
@@ -237,14 +246,15 @@ test('admin dashboard — 1440px, dark', async ({ page }, testInfo) => {
 
   // I8: assert the numbers themselves, not just the pixels. After
   // restoreFixtureState() above, exactly two invites exist (E2E Guest
-  // Party, PENDING — E2E Checkin Party, PENDING) and exactly three guests
-  // are marked attending (Morgan/Casey/Dana), none checked in. A pixel
-  // diff alone would happily "pass" against a re-recorded baseline that
-  // silently encodes the wrong numbers again; asserting the values makes
-  // the baseline's content, not just its bytes, part of what's checked.
+  // Party, ATTENDING with Riley confirmed so the seat map renders — E2E
+  // Checkin Party, PENDING) and exactly four guests are marked attending
+  // (Riley, Morgan/Casey/Dana), none checked in. A pixel diff alone would
+  // happily "pass" against a re-recorded baseline that silently encodes
+  // the wrong numbers again; asserting the values makes the baseline's
+  // content, not just its bytes, part of what's checked.
   await expect(page.locator('[data-stat="Invited"]')).toHaveText('2')
-  await expect(page.locator('[data-stat="Responded"]')).toHaveText('0%')
-  await expect(page.locator('[data-stat="Coming"]')).toHaveText('3')
+  await expect(page.locator('[data-stat="Responded"]')).toHaveText('50%')
+  await expect(page.locator('[data-stat="Coming"]')).toHaveText('4')
   await expect(page.locator('[data-stat="Arrived"]')).toHaveText('0')
 
   await expect(page).toHaveScreenshot('admin-dashboard-1440-dark.png', { maxDiffPixelRatio: 0.01 })

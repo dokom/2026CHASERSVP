@@ -14,9 +14,18 @@ async function seedEvent() {
       name: 'Gala', startsAt: new Date('2026-11-14T18:00:00Z'),
       venueName: 'The Grand Hall', address: '1 Placeholder Avenue',
       rsvpDeadline: new Date('2026-10-24T23:59:00Z'),
+      // Seating released: these tests cover table RESOLUTION. The gate that
+      // hides a table until release + confirmation is covered separately in
+      // tests/integration/seat-release.test.ts.
+      seatsReleasedAt: new Date('2026-08-01T00:00:00Z'),
       tableMarkers: { create: [{ tableNumber: '12', x: 0.4, y: 0.6 }] },
     },
   })
+}
+
+/** The seat gate needs a confirmed primary guest before it resolves a table. */
+async function confirmParty(inviteId: string): Promise<void> {
+  await testDb.guest.updateMany({ where: { inviteId }, data: { attending: true } })
 }
 
 describe('loadGuestPage', () => {
@@ -46,10 +55,11 @@ describe('loadGuestPage', () => {
 
   it('resolves the table from the invite and finds its marker', async () => {
     await seedEvent()
-    const { token } = await createInvite(testDb, null, {
+    const { invite, token } = await createInvite(testDb, null, {
       label: 'P', seatsAllotted: 1, tableNumber: '12',
       primaryGuest: { firstName: 'A', lastName: 'B' },
     })
+    await confirmParty(invite.id)
     const data = await loadGuestPage(testDb, token, NOW)
     expect(data?.table).toBe('12')
     expect(data?.marker).toMatchObject({ tableNumber: '12', x: 0.4, y: 0.6 })
@@ -62,16 +72,18 @@ describe('loadGuestPage', () => {
       primaryGuest: { firstName: 'A', lastName: 'B' },
     })
     await testDb.guest.updateMany({ where: { inviteId: invite.id }, data: { tableNumber: '3' } })
+    await confirmParty(invite.id)
     const data = await loadGuestPage(testDb, token, NOW)
     expect(data?.table).toBe('3')
   })
 
   it('returns a null marker when the table has no placed marker', async () => {
     await seedEvent()
-    const { token } = await createInvite(testDb, null, {
+    const { invite, token } = await createInvite(testDb, null, {
       label: 'P', seatsAllotted: 1, tableNumber: '99',
       primaryGuest: { firstName: 'A', lastName: 'B' },
     })
+    await confirmParty(invite.id)
     const data = await loadGuestPage(testDb, token, NOW)
     expect(data?.table).toBe('99')
     expect(data?.marker).toBeNull()

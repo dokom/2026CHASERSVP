@@ -8,7 +8,8 @@ import { Field } from '@/components/admin/field'
 import { Table, Td } from '@/components/admin/table'
 import { StatusPill } from '@/components/admin/status-pill'
 import { Pagination } from '@/components/admin/pagination'
-import { createInviteAction } from './actions'
+import { formatInviteNumber } from '@/lib/invites/numbering'
+import { createInviteAction, createPlaceholdersAction } from './actions'
 
 const STATUSES = ['PENDING', 'ATTENDING', 'DECLINED', 'PARTIAL'] as const
 
@@ -34,6 +35,8 @@ export default async function InvitesPage({
   })
   const query = parsedQuery.success ? parsedQuery.data : DEFAULT_QUERY
   const { rows, total } = await listInvites(prisma, query)
+  // Pad to the widest number on THIS page so a column never mixes "007" with "1007".
+  const highestNumber = rows.reduce((max, invite) => Math.max(max, invite.number), 0)
 
   const buildHref = (page: number) => {
     const next = new URLSearchParams()
@@ -51,6 +54,7 @@ export default async function InvitesPage({
           <Link href="/admin/invites/import" className="underline underline-offset-4">Import CSV</Link>
           <Link href="/api/admin/qr?format=pdf" className="underline underline-offset-4">Download QR sheet</Link>
           <Link href="/api/admin/qr?format=zip" className="underline underline-offset-4">Download QR images</Link>
+          <Link href="/api/admin/qr?format=csv" className="underline underline-offset-4">Download QR list (CSV)</Link>
         </div>
       </div>
 
@@ -86,6 +90,26 @@ export default async function InvitesPage({
       </form>
 
       <details className="rounded border border-[var(--color-border)] p-4">
+        <summary className="cursor-pointer text-sm">Create numbered placeholders</summary>
+        <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+          Mints a run of invites numbered from the next free number, each with its own permanent QR
+          code and no guest yet. Export the codes for the printer, then open each invite to add the
+          person it went to — the code never changes.
+        </p>
+        <form action={createPlaceholdersAction} className="mt-4 grid gap-4 sm:grid-cols-3">
+          <CsrfInput />
+          <Field label="How many" name="count" type="number" defaultValue="100" required />
+          <Field label="Seats each" name="seatsAllotted" type="number" defaultValue="1" required />
+          <button
+            type="submit"
+            className="self-end rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
+          >
+            Create placeholders
+          </button>
+        </form>
+      </details>
+
+      <details className="rounded border border-[var(--color-border)] p-4">
         <summary className="cursor-pointer text-sm">Add a single invite</summary>
         <form action={createInviteAction} className="mt-4 grid gap-4 sm:grid-cols-3">
           <CsrfInput />
@@ -106,9 +130,10 @@ export default async function InvitesPage({
         </form>
       </details>
 
-      <Table headers={['Label', 'Seats', 'Guests', 'Table', 'Status', 'Extra seats', '']}>
+      <Table headers={['No.', 'Label', 'Seats', 'Guests', 'Table', 'Status', 'Extra seats', '']}>
         {rows.map((invite) => (
           <tr key={invite.id}>
+            <Td><span className="font-mono tabular-nums">{formatInviteNumber(invite.number, highestNumber)}</span></Td>
             <Td>{invite.label}</Td>
             <Td>{invite.seatsAllotted}</Td>
             <Td>{invite.guestCount}</Td>

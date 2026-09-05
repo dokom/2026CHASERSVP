@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { PrismaClient } from '@prisma/client'
-import { createInvite } from '../../src/lib/invites/repository'
+import { createInvite, listInviteTokens } from '../../src/lib/invites/repository'
+import { createPlaceholderInvites } from '../../src/lib/invites/placeholders'
 import { E2E_GUEST_TOKEN } from './global-setup'
 import { E2E_DATABASE_URL } from '../../playwright.config'
 
@@ -10,16 +11,41 @@ import { E2E_DATABASE_URL } from '../../playwright.config'
 // tests/e2e/global-setup.ts for how E2E_GUEST_TOKEN is seeded — via
 // createInvite(), the real path, not a hand-rolled row.
 
-/** A party nobody has answered for yet, so the test owns its whole state. */
-async function freshInviteToken(label: string): Promise<string> {
+/**
+ * A party this test owns end to end. Unanswered by default; `confirmed`
+ * marks the primary guest as coming, which (with seating released by
+ * global-setup) is what unlocks the seat map.
+ */
+async function freshInviteToken(
+  label: string,
+  options: { confirmed?: boolean; tableNumber?: string } = {},
+): Promise<string> {
   const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
   try {
     const created = await createInvite(prisma, null, {
       label,
       seatsAllotted: 1,
+      tableNumber: options.tableNumber,
       primaryGuest: { firstName: 'Noor', lastName: 'Haddad' },
     })
+    if (options.confirmed) {
+      await prisma.guest.updateMany({ where: { inviteId: created.invite.id }, data: { attending: true } })
+      await prisma.invite.update({ where: { id: created.invite.id }, data: { status: 'ATTENDING' } })
+    }
     return created.token
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+/** A numbered placeholder straight off the printer: a token, but nobody attached yet. */
+async function freshPlaceholderToken(): Promise<string> {
+  const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+  try {
+    const { lastNumber } = await createPlaceholderInvites(prisma, null, { count: 1, seatsAllotted: 1 })
+    const [row] = await listInviteTokens(prisma, { number: lastNumber })
+    if (!row) throw new Error('placeholder token not recoverable')
+    return row.token
   } finally {
     await prisma.$disconnect()
   }
@@ -63,13 +89,47 @@ test.describe('guest RSVP', () => {
     await expect(page.getByRole('listitem').first()).toBeVisible()
   })
 
-  test('shows the table and its marker on the floorplan', async ({ page }) => {
-    await page.goto(`/i/${E2E_GUEST_TOKEN}`)
+  test('a confirmed guest sees the table and its marker on the floorplan', async ({ page }, testInfo) => {
+    const token = await freshInviteToken(`E2E Seated ${testInfo.project.name} ${Date.now()}`, {
+      confirmed: true, tableNumber: '12',
+    })
+    await page.goto(`/i/${token}`)
     await expect(page.getByText(/You.re at/)).toBeVisible()
+    await expect(page.locator('[data-countdown]')).toHaveCount(0)
   })
 
-  test('the floorplan opens full screen on a tap and closes on the next', async ({ page }) => {
-    await page.goto(`/i/${E2E_GUEST_TOKEN}`)
+  test('an unconfirmed guest sees a countdown where the seat will be', async ({ page }, testInfo) => {
+    const token = await freshInviteToken(`E2E Unseated ${testInfo.project.name} ${Date.now()}`, {
+      tableNumber: '12',
+    })
+    await page.goto(`/i/${token}`)
+    await expect(page.locator('[data-seat-pending="NOT_CONFIRMED"]')).toBeVisible()
+    await expect(page.getByText(/Confirm you are coming/)).toBeVisible()
+    await expect(page.getByText(/You.re at/)).toHaveCount(0)
+    await expect(page.locator('[data-seat-map-viewport]')).toHaveCount(0)
+
+    // The countdown is live: the seconds digit moves.
+    const seconds = page.locator('[data-countdown-unit="seconds"]')
+    await expect(seconds).toBeVisible()
+    const before = await seconds.textContent()
+    await expect(seconds).not.toHaveText(before ?? '', { timeout: 3_000 })
+  })
+
+  test('a printed placeholder greets by number and holds the RSVP until someone is assigned', async ({ page }) => {
+    const token = await freshPlaceholderToken()
+    await page.goto(`/i/${token}`)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(/Welcome/)
+    await expect(page.locator('[data-guest-name]')).toHaveText(/^\d{3,}$/)
+    await expect(page.getByTestId('invite-unassigned')).toBeVisible()
+    await expect(page.getByTestId('guest-response')).toHaveCount(0)
+    await expect(page.locator('[data-countdown]')).toBeVisible()
+  })
+
+  test('the floorplan opens full screen on a tap and closes on the next', async ({ page }, testInfo) => {
+    const token = await freshInviteToken(`E2E Fullscreen ${testInfo.project.name} ${Date.now()}`, {
+      confirmed: true, tableNumber: '12',
+    })
+    await page.goto(`/i/${token}`)
     await page.locator('[data-seat-map-viewport]').click()
     const overlay = page.locator('[data-seat-map-fullscreen]')
     await expect(overlay).toBeVisible()

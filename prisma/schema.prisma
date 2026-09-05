@@ -88,6 +88,7 @@ model Event {
   address          String
   dressCode        String?
   rsvpDeadline     DateTime
+  seatsReleasedAt  DateTime?
   brandTokens      Json?
   floorplanAssetId String?       @db.ObjectId
   floorplanAsset   MediaAsset?   @relation(fields: [floorplanAssetId], references: [id])
@@ -139,6 +140,7 @@ model Invite {
   id                  String           @id @default(auto()) @map("_id") @db.ObjectId
   tokenHash           String           @unique
   tokenCipher         String
+  number              Int              @unique
   label               String
   seatsAllotted       Int              @default(1)
   extraSeatsRequested Int              @default(0)

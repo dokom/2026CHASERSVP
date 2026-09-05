@@ -31,6 +31,18 @@ test.describe('QR download', () => {
     expect(response.headers()['content-disposition']).toContain('attachment')
   })
 
+  test('returns a printer manifest CSV of numbers and URLs', async ({ page }) => {
+    await signIn(page)
+    const response = await page.request.get('/api/admin/qr?format=csv')
+    expect(response.status()).toBe(200)
+    expect(response.headers()['content-type']).toContain('text/csv')
+    expect(response.headers()['content-disposition']).toContain('gala-qr-codes.csv')
+    const [header, firstRow] = (await response.text()).split('\r\n')
+    expect(header).toBe('number,label,url')
+    // "001","<label>","http://localhost:3000/i/<token>"
+    expect(firstRow).toMatch(/^"\d{3,}","[^"]*","http:\/\/localhost:3000\/i\/[^"]+"$/)
+  })
+
   test('rejects an unknown format', async ({ page }) => {
     await signIn(page)
     const response = await page.request.get('/api/admin/qr?format=docx')

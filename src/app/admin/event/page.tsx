@@ -8,7 +8,7 @@ import { Field } from '@/components/admin/field'
 import { Table, Td } from '@/components/admin/table'
 import {
   saveEventAction, saveAgendaItemAction, deleteAgendaItemAction,
-  saveMealOptionAction, toggleMealOptionAction,
+  saveMealOptionAction, toggleMealOptionAction, setSeatsReleasedAction,
 } from './actions'
 import { FloorplanEditor } from './floorplan-editor'
 
@@ -69,6 +69,27 @@ export default async function EventPage({
 
       {event ? (
         <>
+          <div className="space-y-3" data-seating-release={event.seatsReleasedAt ? 'released' : 'hidden'}>
+            <h2 className="font-serif text-xl">Seating</h2>
+            <p className="text-sm text-[var(--color-text-muted)]">
+              {event.seatsReleasedAt
+                ? `Seating was released on ${new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: event.timezone }).format(event.seatsReleasedAt)}. Confirmed guests now see their table; everyone else still sees the countdown.`
+                : 'Tables are hidden from every guest. Until you release seating, confirmed guests see a countdown to the evening instead of their table.'}
+            </p>
+            <form action={setSeatsReleasedAction}>
+              <CsrfInput />
+              <input type="hidden" name="released" value={event.seatsReleasedAt ? 'false' : 'true'} />
+              <button
+                type="submit"
+                className={event.seatsReleasedAt
+                  ? 'rounded border border-[var(--color-border)] px-4 py-2 text-sm'
+                  : 'rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]'}
+              >
+                {event.seatsReleasedAt ? 'Hide seating again' : 'Release seating to guests'}
+              </button>
+            </form>
+          </div>
+
           <div className="space-y-4">
             <h2 className="font-serif text-xl">Agenda</h2>
             <Table headers={['Time', 'Title', 'Order', '']}>

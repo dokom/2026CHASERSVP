@@ -40,6 +40,15 @@ export const createInviteSchema = z.object({
   primaryGuest: primaryGuestSchema,
 })
 
+/** A batch of numbered, guest-less invites for the printer. */
+export const createPlaceholdersSchema = z.object({
+  count: z.coerce.number().int().min(1, 'Create at least one placeholder').max(2000, 'At most 2000 per batch'),
+  seatsAllotted: z.coerce.number().int().min(1, 'At least one seat').max(20),
+})
+
+/** A person the admin attaches to (or edits on) an invite. */
+export const inviteGuestSchema = primaryGuestSchema
+
 export const updateInviteSchema = z.object({
   label: z.string().trim().min(1).max(160).optional(),
   seatsAllotted: z.coerce.number().int().min(1).max(20).optional(),

@@ -21,6 +21,8 @@ export type EventDetail = {
   id: string; name: string; tagline: string | null
   startsAt: Date; timezone: string; venueName: string; address: string
   dressCode: string | null; rsvpDeadline: Date; floorplanAssetId: string | null
+  /** When the organiser released seating to guests; null while still hidden. */
+  seatsReleasedAt: Date | null
   agendaItems: AgendaItemRow[]
   mealOptions: MealOptionRow[]
   tableMarkers: TableMarkerRow[]
@@ -29,6 +31,7 @@ export type EventDetail = {
 const SELECT = {
   id: true, name: true, tagline: true, startsAt: true, timezone: true,
   venueName: true, address: true, dressCode: true, rsvpDeadline: true, floorplanAssetId: true,
+  seatsReleasedAt: true,
   agendaItems: {
     select: { id: true, startsAt: true, title: true, description: true, icon: true, sortOrder: true },
     orderBy: [{ sortOrder: 'asc' }, { startsAt: 'asc' }],
@@ -77,6 +80,22 @@ export async function updateEventDetails(
     })
     await writeAudit(tx, {
       actorId, action: 'event.update', entity: 'Event', entityId: id, meta: { ...patch },
+    })
+  })
+}
+
+/**
+ * Opens (or closes again) the seat reveal for every guest at once. Guests
+ * still only see a table once they have confirmed — see
+ * `src/lib/guest/seat-reveal.ts` for the full rule.
+ */
+export async function setSeatsReleased(
+  db: PrismaClient, actorId: string | null, id: string, released: boolean, now: Date = new Date(),
+): Promise<void> {
+  await db.$transaction(async (tx) => {
+    await tx.event.update({ where: { id }, data: { seatsReleasedAt: released ? now : null } })
+    await writeAudit(tx, {
+      actorId, action: 'event.setSeatsReleased', entity: 'Event', entityId: id, meta: { released },
     })
   })
 }

@@ -1,6 +1,29 @@
 import { test, expect } from '@playwright/test'
+import { PrismaClient } from '@prisma/client'
+import { createInvite } from '../../src/lib/invites/repository'
 import { E2E_GUEST_TOKEN, ADMIN_CREDENTIALS } from './global-setup'
 import { signIn } from './sign-in'
+import { E2E_DATABASE_URL } from '../../playwright.config'
+
+/**
+ * A throwaway invite for the token-regeneration test below. It must NOT be
+ * "whichever invite is first in the list": the list is ordered by invite
+ * number, so that is the seeded E2E Guest Party — and regenerating ITS
+ * token silently invalidates E2E_GUEST_TOKEN for every later guest spec.
+ */
+async function disposableInviteId(): Promise<string> {
+  const prisma = new PrismaClient({ datasources: { db: { url: E2E_DATABASE_URL } } })
+  try {
+    const { invite } = await createInvite(prisma, null, {
+      label: `E2E CSP Reveal ${Date.now()}`,
+      seatsAllotted: 1,
+      primaryGuest: { firstName: 'Sam', lastName: 'Reveal' },
+    })
+    return invite.id
+  } finally {
+    await prisma.$disconnect()
+  }
+}
 
 const PAGES = [
   { name: 'guest portal', path: () => `/i/${E2E_GUEST_TOKEN}`, auth: false },
@@ -41,8 +64,7 @@ test('the invite-token reveal script still runs under the policy', async ({ page
   // on /admin/login instead (see visual.spec.ts's admin screenshots for the
   // same wait, and this test's own flakiness under full-suite load without it).
   await expect(page).toHaveURL(/\/admin$/)
-  await page.goto('/admin/invites')
-  await page.getByRole('link', { name: 'Open' }).first().click()
+  await page.goto(`/admin/invites/${await disposableInviteId()}`)
   const violations: string[] = []
   page.on('console', (m) => { if (/Content Security Policy/.test(m.text())) violations.push(m.text()) })
   await page.getByRole('button', { name: 'Regenerate QR token' }).click()

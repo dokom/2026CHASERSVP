@@ -119,6 +119,30 @@ npm run serve
 There is a few seconds of downtime while the new server starts. Cloudflare
 will show its own 52x page during that window.
 
+**Upgrading a database that predates invite numbers** (the `Invite.number`
+column, added with the printed-placeholder feature): `npm run db:push` will
+FAIL on such a database — MongoDB cannot build the unique index while more
+than one existing invite lacks the field. Number them first, then push:
+
+```powershell
+node scripts/backfill-invite-numbers.mjs   # BEFORE db:push, once
+npm run db:push
+```
+
+It numbers unnumbered invites in creation order and is safe to re-run.
+
+## Printed QR codes and the seat reveal
+
+- **Invites → Create numbered placeholders** mints a run of invites (`001` …
+  `nnn`), each with a permanent QR code and no guest yet. **Download QR list
+  (CSV)** gives the printer `number,label,url`; the ZIP names each PNG by its
+  number. Afterwards, open each invite and **Add a guest** — the code on the
+  card never changes, and a scanned card that has no guest yet shows the
+  guest a "still being prepared" page.
+- **Event → Seating** hides every table until you press **Release seating to
+  guests**. Even after release, a guest only sees their table once they have
+  confirmed they are coming; until then they see a countdown to the event.
+
 ## Before the first invitation goes out
 
 - [ ] Owner account is a real address, `owner@example.com` deleted.

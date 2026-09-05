@@ -6,10 +6,11 @@ import { requireRole } from '@/lib/auth/guard'
 import { getInvite } from '@/lib/invites/repository'
 import { CsrfInput } from '@/components/admin/csrf-input'
 import { Field } from '@/components/admin/field'
-import { Table, Td } from '@/components/admin/table'
 import { StatusPill } from '@/components/admin/status-pill'
+import { formatInviteNumber } from '@/lib/invites/numbering'
 import {
   updateInviteAction, deleteInviteAction, regenerateTokenAction, resolveExtraSeatsAction,
+  addGuestAction, updateGuestAction, removeGuestAction,
 } from '../actions'
 import { INVITE_REVEAL_COOKIE, INVITE_REVEAL_SEEN_COOKIE } from '@/lib/validation/invites'
 
@@ -64,6 +65,9 @@ export default async function InviteDetailPage({
   return (
     <section className="space-y-8">
       <div className="flex flex-wrap items-center gap-3">
+        <span data-testid="invite-number" className="rounded border border-[var(--color-border)] px-2 py-0.5 font-mono text-sm tabular-nums">
+          No. {formatInviteNumber(invite.number)}
+        </span>
         <h1 className="font-serif text-2xl">{invite.label}</h1>
         <StatusPill status={invite.status} />
       </div>
@@ -124,18 +128,77 @@ export default async function InviteDetailPage({
         </button>
       </form>
 
-      <Table headers={['Name', 'Company', 'Title', 'Email', 'Attending', 'Table']}>
+      <section aria-labelledby="guests-heading" className="space-y-4">
+        <h2 id="guests-heading" className="font-serif text-xl">
+          Guests <span className="text-sm text-[var(--color-text-muted)]">({invite.guests.length} of {invite.seatsAllotted} seats)</span>
+        </h2>
+
+        {invite.guests.length === 0 ? (
+          <p data-testid="invite-no-guests" className="rounded border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
+            Nobody is attached to this invite yet. Add the person this card went to — their QR code stays exactly as printed.
+          </p>
+        ) : null}
+
         {invite.guests.map((guest) => (
-          <tr key={guest.id}>
-            <Td>{guest.firstName} {guest.lastName}{guest.isPrimary ? ' (primary)' : ''}</Td>
-            <Td>{guest.company ?? '—'}</Td>
-            <Td>{guest.title ?? '—'}</Td>
-            <Td>{guest.email ?? '—'}</Td>
-            <Td>{guest.attending === null ? '—' : guest.attending ? 'Yes' : 'No'}</Td>
-            <Td>{guest.tableNumber ?? invite.tableNumber ?? '—'}</Td>
-          </tr>
+          <form
+            key={guest.id}
+            action={updateGuestAction}
+            data-testid="invite-guest"
+            className="grid gap-3 rounded border border-[var(--color-border)] p-4 sm:grid-cols-3"
+          >
+            <CsrfInput />
+            <input type="hidden" name="id" value={invite.id} />
+            <input type="hidden" name="guestId" value={guest.id} />
+            <p className="text-sm sm:col-span-3">
+              <span className="font-medium">{guest.firstName} {guest.lastName}</span>
+              {guest.isPrimary ? ' · primary' : ''}
+              {' · '}Attending: {guest.attending === null ? 'no answer yet' : guest.attending ? 'yes' : 'no'}
+              {' · '}Table: {guest.tableNumber ?? invite.tableNumber ?? '—'}
+              {guest.checkedInAt ? ' · checked in' : ''}
+            </p>
+            <Field label="First name" name="firstName" defaultValue={guest.firstName} required />
+            <Field label="Last name" name="lastName" defaultValue={guest.lastName} required />
+            <Field label="Email" name="email" type="email" defaultValue={guest.email ?? ''} />
+            <Field label="Company" name="company" defaultValue={guest.company ?? ''} />
+            <Field label="Title" name="title" defaultValue={guest.title ?? ''} />
+            <div className="flex items-end gap-3">
+              <button type="submit" className="rounded border border-[var(--color-border)] px-4 py-2 text-sm">
+                Save guest
+              </button>
+              {guest.checkedInAt ? null : (
+                <button
+                  type="submit"
+                  formAction={removeGuestAction}
+                  className="px-2 py-2 text-sm text-[var(--color-danger)] underline underline-offset-4"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </form>
         ))}
-      </Table>
+
+        {invite.guests.length < invite.seatsAllotted ? (
+          <details className="rounded border border-[var(--color-border)] p-4" open={invite.guests.length === 0}>
+            <summary className="cursor-pointer text-sm">Add a guest</summary>
+            <form action={addGuestAction} className="mt-4 grid gap-4 sm:grid-cols-3">
+              <CsrfInput />
+              <input type="hidden" name="id" value={invite.id} />
+              <Field label="First name" name="firstName" required />
+              <Field label="Last name" name="lastName" required />
+              <Field label="Email" name="email" type="email" />
+              <Field label="Company" name="company" />
+              <Field label="Title" name="title" />
+              <button
+                type="submit"
+                className="self-end rounded bg-[var(--color-accent)] px-4 py-2 font-medium text-[var(--on-accent)]"
+              >
+                Add guest
+              </button>
+            </form>
+          </details>
+        ) : null}
+      </section>
 
       <div className="flex gap-4">
         <form action={regenerateTokenAction}>

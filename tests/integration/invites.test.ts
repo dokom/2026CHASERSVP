@@ -169,7 +169,7 @@ describe('invite repository', () => {
     const { invite, token } = await createInvite(testDb, null, base)
     expect(await getInviteToken(testDb, invite.id)).toBe(token)
     const all = await listInviteTokens(testDb)
-    expect(all).toEqual([{ id: invite.id, label: 'Reyes Party', token }])
+    expect(all).toEqual([{ id: invite.id, number: 1, label: 'Reyes Party', token }])
   })
 
   it('recovers the new token after regeneration', async () => {

@@ -10,6 +10,7 @@ async function seedInvite(label: string, tableNumber: string | null) {
     data: {
       tokenHash: `hash-${label}-${Math.random()}`,
       tokenCipher: `cipher-${label}`,
+      number: Math.floor(Math.random() * 1_000_000),
       label,
       seatsAllotted: 5,
       tableNumber,

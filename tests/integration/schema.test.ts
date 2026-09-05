@@ -16,6 +16,7 @@ describe('schema', () => {
       data: {
         tokenHash: 'hash-1',
         tokenCipher: 'cipher-1',
+        number: 1,
         label: 'Reyes Party',
         seatsAllotted: 2,
         guests: { create: { firstName: 'Jordan', lastName: 'Reyes', isPrimary: true } },
@@ -26,9 +27,9 @@ describe('schema', () => {
   })
 
   it('rejects a duplicate invite token hash', async () => {
-    await testDb.invite.create({ data: { tokenHash: 'dupe', tokenCipher: 'c1', label: 'A' } })
+    await testDb.invite.create({ data: { tokenHash: 'dupe', tokenCipher: 'c1', number: 1, label: 'A' } })
     await expect(
-      testDb.invite.create({ data: { tokenHash: 'dupe', tokenCipher: 'c2', label: 'B' } }),
+      testDb.invite.create({ data: { tokenHash: 'dupe', tokenCipher: 'c2', number: 2, label: 'B' } }),
     ).rejects.toThrow()
   })
 
@@ -47,7 +48,7 @@ describe('schema', () => {
 
   it('defaults an invite to PENDING with no extra seats', async () => {
     const invite = await testDb.invite.create({
-      data: { tokenHash: 'h2', tokenCipher: 'c3', label: 'C' },
+      data: { tokenHash: 'h2', tokenCipher: 'c3', number: 3, label: 'C' },
     })
     expect(invite.status).toBe('PENDING')
     expect(invite.extraSeatsStatus).toBe('NONE')

@@ -3,6 +3,7 @@ import { generateInviteToken, hashToken } from '@/lib/crypto/tokens'
 import { seal, open } from '@/lib/crypto/secret-box'
 import { getEnv } from '@/lib/env'
 import { deriveInviteStatus, type InviteStatus } from './status'
+import { nextNumbers } from './numbering'
 import { writeAudit, type AuditClient } from '@/lib/audit'
 
 export class SeatLimitError extends Error {
@@ -12,8 +13,23 @@ export class SeatLimitError extends Error {
   }
 }
 
+/**
+ * Hands out the next `count` invite numbers inside the caller's transaction.
+ * The unique index on `Invite.number` is the backstop: two admins creating
+ * invites in the same instant race for the same number and the loser's
+ * transaction fails with P2002 rather than printing a duplicate code.
+ */
+export async function allocateInviteNumbers(tx: AuditClient, count: number): Promise<number[]> {
+  const highest = await tx.invite.findFirst({
+    select: { number: true },
+    orderBy: { number: 'desc' },
+  })
+  return nextNumbers(highest?.number ?? null, count)
+}
+
 export type InviteRow = {
   id: string
+  number: number
   label: string
   seatsAllotted: number
   status: InviteStatus
@@ -26,7 +42,7 @@ export type InviteRow = {
 }
 
 const ROW_SELECT = {
-  id: true, label: true, seatsAllotted: true, status: true, tableNumber: true,
+  id: true, number: true, label: true, seatsAllotted: true, status: true, tableNumber: true,
   extraSeatsRequested: true, extraSeatsStatus: true, respondedAt: true, createdAt: true,
   _count: { select: { guests: true } },
 } satisfies Prisma.InviteSelect
@@ -60,10 +76,12 @@ export async function createInvite(
   const token = generateInviteToken()
 
   const invite = await db.$transaction(async (tx) => {
+    const numbers = await allocateInviteNumbers(tx, 1)
     const created = await tx.invite.create({
       data: {
         tokenHash: hashToken(token),
         tokenCipher: seal(token, getEnv().SESSION_SECRET),
+        number: numbers[0]!,
         label: input.label,
         seatsAllotted: input.seatsAllotted,
         tableNumber: input.tableNumber || null,
@@ -108,12 +126,16 @@ export async function listInvites(
   const page = query.page ?? 1
   const pageSize = query.pageSize ?? 50
   const search = query.search?.trim()
+  // "007" and "7" both find invite number 7 — the printed card shows the
+  // padded form, the admin may type either.
+  const searchedNumber = search && /^\d{1,9}$/.test(search) ? Number(search) : null
 
   const where: Prisma.InviteWhereInput = {
     ...(query.status ? { status: query.status } : {}),
     ...(search
       ? {
           OR: [
+            ...(searchedNumber !== null ? [{ number: searchedNumber }] : []),
             { label: { contains: search, mode: 'insensitive' } },
             { guests: { some: { firstName: { contains: search, mode: 'insensitive' } } } },
             { guests: { some: { lastName: { contains: search, mode: 'insensitive' } } } },
@@ -128,7 +150,9 @@ export async function listInvites(
     db.invite.findMany({
       where,
       select: ROW_SELECT,
-      orderBy: { createdAt: 'desc' },
+      // Printed order: card 001 first, so the list reads like the stack of
+      // invitations on the admin's desk.
+      orderBy: { number: 'asc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -153,6 +177,7 @@ export type InviteDetail = InviteRow & {
     isPrimary: boolean
     attending: boolean | null
     tableNumber: string | null
+    checkedInAt: Date | null
   }[]
 }
 
@@ -177,7 +202,7 @@ export async function getInvite(db: PrismaClient, id: string): Promise<InviteDet
           select: {
             id: true, firstName: true, lastName: true, badgeName: true, company: true,
             title: true, email: true, phone: true, isPrimary: true, attending: true,
-            tableNumber: true,
+            tableNumber: true, checkedInAt: true,
           },
           orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
         },
@@ -293,18 +318,18 @@ export async function resolveExtraSeats(
 export async function listInviteTokens(
   db: PrismaClient,
   where: Prisma.InviteWhereInput = {},
-): Promise<{ id: string; label: string; token: string }[]> {
+): Promise<{ id: string; number: number; label: string; token: string }[]> {
   const secret = getEnv().SESSION_SECRET
   const rows = await db.invite.findMany({
     where,
-    select: { id: true, label: true, tokenCipher: true },
-    orderBy: { label: 'asc' },
+    select: { id: true, number: true, label: true, tokenCipher: true },
+    orderBy: { number: 'asc' },
   })
 
-  const out: { id: string; label: string; token: string }[] = []
+  const out: { id: string; number: number; label: string; token: string }[] = []
   for (const row of rows) {
     try {
-      out.push({ id: row.id, label: row.label, token: open(row.tokenCipher, secret) })
+      out.push({ id: row.id, number: row.number, label: row.label, token: open(row.tokenCipher, secret) })
     } catch {
       // Unrecoverable token — the operator must regenerate this invite.
     }

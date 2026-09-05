@@ -6,7 +6,7 @@ import { prisma } from '@/lib/db'
 import { requireCsrf, requireRole } from '@/lib/auth/guard'
 import {
   getEvent, updateEventDetails, upsertAgendaItem, deleteAgendaItem,
-  upsertMealOption, setMealOptionActive,
+  upsertMealOption, setMealOptionActive, setSeatsReleased,
 } from '@/lib/events/repository'
 import { eventDetailsSchema, agendaItemSchema, mealOptionSchema } from '@/lib/validation/event'
 
@@ -44,6 +44,23 @@ export async function saveEventAction(formData: FormData): Promise<void> {
   } else {
     await prisma.event.create({ data: parsed.data })
   }
+  revalidatePath('/admin/event')
+}
+
+/**
+ * Releases (or hides again) every guest's table. Guests only ever see a
+ * table once they have confirmed, so releasing early is safe — an
+ * unconfirmed guest keeps seeing the countdown.
+ */
+export async function setSeatsReleasedAction(formData: FormData): Promise<void> {
+  const actor = await requireRole('ADMIN')
+  await requireCsrf(formData)
+
+  const event = await getEvent(prisma)
+  if (!event) fail('Create the event before releasing seating.')
+
+  const released = formData.get('released') === 'true'
+  await setSeatsReleased(prisma, actor.id, event.id, released)
   revalidatePath('/admin/event')
 }
 

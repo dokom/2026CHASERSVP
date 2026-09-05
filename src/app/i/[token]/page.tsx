@@ -14,7 +14,23 @@ import { Arrival } from '@/components/motion/arrival'
 import { Seal } from '@/components/motion/seal'
 import { Evening } from '@/components/motion/evening'
 import { SeatAct } from '@/components/motion/seat'
+import { Countdown } from '@/components/guest/countdown'
+import type { SeatVisibility } from '@/lib/guest/seat-reveal'
 import { RsvpForm } from './rsvp-form'
+
+/** Why the table is still hidden, in the guest's terms. */
+function seatPendingCopy(seat: SeatVisibility, isAssigned: boolean): string {
+  if (seat.shown) return ''
+  if (!isAssigned) return 'Your table will appear here once your invitation is ready.'
+  switch (seat.reason) {
+    case 'NOT_CONFIRMED':
+      return 'Confirm you are coming below, and your table will appear here once seating is announced.'
+    case 'NOT_RELEASED':
+      return 'You are confirmed. Seating will be announced closer to the evening — until then, the countdown is on.'
+    case 'NO_TABLE':
+      return 'You are confirmed. Your table will appear here once seating is announced.'
+  }
+}
 
 /** The URL carries a credential: never index it, never leak it in a referrer. */
 export const metadata: Metadata = {
@@ -30,7 +46,8 @@ export default async function GuestPage({
   params: Promise<{ token: string }>
 }) {
   const { token } = await params
-  const data = await loadGuestPage(prisma, token, new Date())
+  const now = new Date()
+  const data = await loadGuestPage(prisma, token, now)
   if (!data) notFound()
 
   // Read only. Middleware guarantees the guest CSRF cookie for /i/*; setting
@@ -42,8 +59,11 @@ export default async function GuestPage({
   const csrf = store.get(GUEST_CSRF_COOKIE)?.value
   if (!csrf) throw new Error('CSRF cookie missing - check that src/proxy.ts matches /i/*')
 
-  const { invite, event, window, table, marker } = data
+  const { invite, event, window, table, marker, seat } = data
   const primary = invite.guests.find((guest) => guest.isPrimary) ?? invite.guests[0]
+  // A printed placeholder nobody has been assigned to yet: greet by number,
+  // and hold the RSVP until the organiser attaches a name.
+  const isAssigned = invite.guests.length > 0
 
   return (
     <MotionProvider>
@@ -114,19 +134,30 @@ export default async function GuestPage({
             </Evening>
           ) : null}
 
-          {table ? (
+          {seat.shown && table ? (
             <SeatAct>
               <section aria-labelledby="seat" className="relative z-10 space-y-4 pl-12">
                 <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
                 <SeatMap floorplanAssetId={event.floorplanAssetId} marker={marker} table={table} />
               </section>
             </SeatAct>
-          ) : null}
+          ) : (
+            <section aria-labelledby="seat" data-seat-pending={seat.shown ? undefined : seat.reason} className="relative z-10 space-y-4 pl-12">
+              <h2 id="seat" className="font-serif text-3xl">Your seat</h2>
+              <p className="text-[var(--color-text-muted)]">{seatPendingCopy(seat, isAssigned)}</p>
+              <Countdown targetMs={event.startsAt.getTime()} initialNowMs={now.getTime()} />
+            </section>
+          )}
         </div>
 
         <section aria-labelledby="rsvp" className="relative z-10 space-y-4 pl-12">
           <h2 id="rsvp" className="font-serif text-3xl">Your response</h2>
-          {window.isOpen ? (
+          {!isAssigned ? (
+            <p role="status" data-testid="invite-unassigned" className="rounded border border-[var(--color-border)] p-4">
+              This invitation is still being prepared. Once the organiser has added your name,
+              you can respond here.
+            </p>
+          ) : window.isOpen ? (
             <RsvpForm token={token} invite={invite} csrf={csrf} />
           ) : (
             <p role="status" className="rounded border border-[var(--color-border)] p-4">
