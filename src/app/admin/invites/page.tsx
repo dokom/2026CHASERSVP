@@ -130,7 +130,7 @@ export default async function InvitesPage({
         </form>
       </details>
 
-      <Table headers={['No.', 'Label', 'Seats', 'Guests', 'Table', 'Status', 'Extra seats', '']}>
+      <Table headers={['No.', 'Label', 'Seats', 'Guests', 'Table', 'Status', '']}>
         {rows.map((invite) => (
           <tr key={invite.id}>
             <Td><span className="font-mono tabular-nums">{formatInviteNumber(invite.number, highestNumber)}</span></Td>
@@ -139,7 +139,6 @@ export default async function InvitesPage({
             <Td>{invite.guestCount}</Td>
             <Td>{invite.tableNumber ?? '—'}</Td>
             <Td><StatusPill status={invite.status} /></Td>
-            <Td>{invite.extraSeatsStatus === 'PENDING' ? `${invite.extraSeatsRequested} pending` : '—'}</Td>
             <Td>
               <Link href={`/admin/invites/${invite.id}`} className="underline underline-offset-4">
                 Open

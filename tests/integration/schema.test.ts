@@ -46,12 +46,11 @@ describe('schema', () => {
     expect(log?.action).toBe('invite.create')
   })
 
-  it('defaults an invite to PENDING with no extra seats', async () => {
+  it('defaults an invite to PENDING with one seat', async () => {
     const invite = await testDb.invite.create({
       data: { tokenHash: 'h2', tokenCipher: 'c3', number: 3, label: 'C' },
     })
     expect(invite.status).toBe('PENDING')
-    expect(invite.extraSeatsStatus).toBe('NONE')
     expect(invite.seatsAllotted).toBe(1)
   })
 })
