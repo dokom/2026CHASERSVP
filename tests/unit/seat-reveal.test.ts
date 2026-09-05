@@ -34,31 +34,38 @@ describe('seatVisibility (one guest)', () => {
 describe('partySeatVisibility', () => {
   it('is shown when at least one guest has a showable seat', () => {
     expect(partySeatVisibility({
-      seatsReleasedAt: RELEASED, primaryAttending: false,
+      seatsReleasedAt: RELEASED, primaryAttending: false, primaryTable: '1',
       guests: [{ attending: false, table: '1' }, { attending: true, table: '7' }],
     })).toEqual({ shown: true })
   })
 
   it("falls back to the primary guest's reason when nobody is showable", () => {
     expect(partySeatVisibility({
-      seatsReleasedAt: RELEASED, primaryAttending: null,
+      seatsReleasedAt: RELEASED, primaryAttending: null, primaryTable: '1',
       guests: [{ attending: null, table: '1' }, { attending: true, table: null }],
     })).toEqual({ shown: false, reason: 'NOT_CONFIRMED' })
     expect(partySeatVisibility({
-      seatsReleasedAt: null, primaryAttending: true,
+      seatsReleasedAt: null, primaryAttending: true, primaryTable: '1',
       guests: [{ attending: true, table: '1' }],
     })).toEqual({ shown: false, reason: 'NOT_RELEASED' })
   })
 
   it('reports NO_TABLE for a confirmed, released party with no tables at all', () => {
     expect(partySeatVisibility({
-      seatsReleasedAt: RELEASED, primaryAttending: true,
+      seatsReleasedAt: RELEASED, primaryAttending: true, primaryTable: null,
       guests: [{ attending: true, table: null }],
     })).toEqual({ shown: false, reason: 'NO_TABLE' })
   })
 
   it('treats an empty party (unassigned placeholder) as unconfirmed', () => {
-    expect(partySeatVisibility({ seatsReleasedAt: RELEASED, primaryAttending: undefined, guests: [] }))
+    expect(partySeatVisibility({ seatsReleasedAt: RELEASED, primaryAttending: undefined, primaryTable: null, guests: [] }))
       .toEqual({ shown: false, reason: 'NOT_CONFIRMED' })
+  })
+
+  it("never borrows a non-attending guest's table for the primary's reason", () => {
+    expect(partySeatVisibility({
+      seatsReleasedAt: RELEASED, primaryAttending: true, primaryTable: null,
+      guests: [{ attending: true, table: null }, { attending: false, table: '5' }],
+    })).toEqual({ shown: false, reason: 'NO_TABLE' })
   })
 })

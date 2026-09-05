@@ -63,6 +63,7 @@ export async function loadGuestPage(
   const seat = partySeatVisibility({
     seatsReleasedAt: event.seatsReleasedAt,
     primaryAttending: primary?.attending,
+    primaryTable: primary ? resolvedTable(primary, invite) : null,
     guests: perGuest.map(({ guest, table }) => ({ attending: guest.attending, table })),
   })
 

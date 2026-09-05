@@ -92,6 +92,18 @@ describe('loadGuestPage', () => {
     expect(data?.seats.map((s) => s.name)).toEqual(['A B'])
   })
 
+  it('stays pending when only a declined guest has a table', async () => {
+    await seedEvent()
+    const { invite, token } = await createInvite(testDb, null, {
+      label: 'P', seatsAllotted: 2, primaryGuest: { firstName: 'A', lastName: 'B' },
+    })
+    await confirmParty(invite.id)
+    await testDb.guest.create({ data: { inviteId: invite.id, firstName: 'No', lastName: 'Show', attending: false, tableNumber: '5' } })
+    const data = await loadGuestPage(testDb, token, NOW)
+    expect(data?.seat).toEqual({ shown: false, reason: 'NO_TABLE' })
+    expect(data?.seats).toEqual([])
+  })
+
   it('reports a closed window after the deadline', async () => {
     await seedEvent()
     const { token } = await createInvite(testDb, null, {

@@ -24,22 +24,23 @@ export function seatVisibility(input: {
 
 /**
  * The party as a whole: shown as soon as any one guest's seat is showable.
- * When none is, the reason comes from the primary guest, so the pending
- * copy speaks to the person holding the phone.
+ * When none is, the reason comes from the primary guest's own answer and
+ * own table, so the pending copy speaks to the person holding the phone
+ * without borrowing another guest's table to explain it.
  */
 export function partySeatVisibility(input: {
   seatsReleasedAt: Date | null
   primaryAttending: boolean | null | undefined
+  primaryTable: string | null
   guests: { attending: boolean | null; table: string | null }[]
 }): SeatVisibility {
   const anyShown = input.guests.some(
     (guest) => seatVisibility({ seatsReleasedAt: input.seatsReleasedAt, ...guest }).shown,
   )
   if (anyShown) return { shown: true }
-  const primaryTable = input.guests.find((guest) => guest.table)?.table ?? null
   return seatVisibility({
     seatsReleasedAt: input.seatsReleasedAt,
     attending: input.primaryAttending,
-    table: primaryTable,
+    table: input.primaryTable,
   })
 }
