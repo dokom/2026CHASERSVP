@@ -144,17 +144,29 @@ test.describe('invite management', () => {
 
   test('lets seats shrink below the guest count', async ({ page }) => {
     await signIn(page)
-    await page.goto(`/admin/invites/${await disposableInviteId(`E2E Shrink ${Date.now()}`)}`)
+    const detailUrl = `/admin/invites/${await disposableInviteId(`E2E Shrink ${Date.now()}`)}`
+    await page.goto(detailUrl)
     await page.getByLabel('Seats', { exact: true }).fill('0')
     await page.getByRole('button', { name: 'Save changes' }).click()
-    // Zod refuses 0 (min 1) and reports it; 1 with one guest is accepted silently.
-    await expect(page.getByRole('alert')).toBeVisible()
-    // The failed save redirected here with ?error=... still in the URL;
-    // navigate to the bare detail URL first so that stale alert can't make
-    // the next assertion pass — or fail for the wrong reason.
-    await page.goto(page.url().split('?')[0] ?? page.url())
+    // Zod refuses 0 (min 1) and reports it via ?error=…; Next.js also
+    // renders a hidden route-announcer div with role="alert" whose text is
+    // the page title (the invite's disposable label, which itself contains
+    // digits from its Date.now() suffix), so `hasText: /1/` cannot tell the
+    // two apart — scope the locator to a fragment unique to the zod message.
+    await expect(page).toHaveURL(/error=/)
+    await expect(page.getByRole('alert').filter({ hasText: 'greater than or equal to' })).toBeVisible()
+
+    // A seat count below the guest count is accepted: it is a planning
+    // number, not a cap. The action revalidates in place (no redirect), so
+    // wait for its POST to land before reading the result.
+    await page.goto(detailUrl)
     await page.getByLabel('Seats', { exact: true }).fill('1')
-    await page.getByRole('button', { name: 'Save changes' }).click()
-    await expect(page.getByRole('alert')).toHaveCount(0)
+    await Promise.all([
+      page.waitForResponse((res) => res.request().method() === 'POST' && res.url().includes('/admin/invites')),
+      page.getByRole('button', { name: 'Save changes' }).click(),
+    ])
+    await expect(page).not.toHaveURL(/error=/)
+    await page.reload()
+    await expect(page.getByLabel('Seats', { exact: true })).toHaveValue('1')
   })
 })
