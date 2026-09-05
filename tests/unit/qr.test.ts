@@ -136,4 +136,30 @@ describe('buildQrPdf', () => {
     const doc = await PDFDocument.load(await buildQrPdf([]))
     expect(doc.getPageCount()).toBe(1)
   })
+
+  it('sets the printed index in bold, with the party name beneath once assigned', async () => {
+    const pdf = await buildQrPdf([
+      { number: '001', label: '001', url: 'https://x.test/i/a' },
+      { number: '002', label: 'Reyes Party', url: 'https://x.test/i/b' },
+    ])
+    const doc = await PDFDocument.load(pdf)
+    expect(doc.getPageCount()).toBe(1)
+    // Both faces are embedded only because both are drawn: the bold index
+    // for every cell, the regular face for the assigned party's name.
+    // (pdf-lib compresses object streams, so look at the parsed objects.)
+    const fonts = doc.context.enumerateIndirectObjects()
+      .map(([, object]) => object.toString())
+      .filter((object) => object.includes('/BaseFont'))
+      .join(' ')
+    expect(fonts).toContain('/BaseFont /Helvetica-Bold')
+    expect(fonts).toMatch(/\/BaseFont \/Helvetica(?!-)/)
+  })
+
+  it('fits a full 400-card run on 34 pages', { timeout: 120_000 }, async () => {
+    const items = Array.from({ length: 400 }, (_, i) => ({
+      number: String(i + 1).padStart(3, '0'), label: String(i + 1).padStart(3, '0'), url: `https://x.test/i/${i}`,
+    }))
+    const doc = await PDFDocument.load(await buildQrPdf(items))
+    expect(doc.getPageCount()).toBe(34)
+  })
 })

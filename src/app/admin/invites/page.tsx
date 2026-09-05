@@ -58,9 +58,13 @@ export default async function InvitesPage({
         <h1 className="font-serif text-2xl">Invites</h1>
         <div className="flex gap-4 text-sm">
           <Link href="/admin/invites/import" className="underline underline-offset-4">Import CSV</Link>
-          <Link href="/api/admin/qr?format=pdf" className="underline underline-offset-4">Download QR sheet</Link>
-          <Link href="/api/admin/qr?format=zip" className="underline underline-offset-4">Download QR images</Link>
-          <Link href="/api/admin/qr?format=csv" className="underline underline-offset-4">Download QR list (CSV)</Link>
+          {/* Plain anchors, not <Link>: these are file downloads from a route
+              handler. A <Link> prefetches the URL as an RSC payload (without
+              its query string, so the handler answers 400) and then falls
+              back to a hard navigation on click. */}
+          <a href="/api/admin/qr?format=pdf" download className="underline underline-offset-4">Download QR sheet</a>
+          <a href="/api/admin/qr?format=zip" download className="underline underline-offset-4">Download QR images</a>
+          <a href="/api/admin/qr?format=csv" download className="underline underline-offset-4">Download QR list (CSV)</a>
         </div>
       </div>
 

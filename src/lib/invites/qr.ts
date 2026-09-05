@@ -1,6 +1,6 @@
 import QRCode from 'qrcode'
 import JSZip from 'jszip'
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { escapeCsvCell } from '@/lib/guests/export'
 
 /**
@@ -17,6 +17,12 @@ export function qrCaption(item: QrItem): string {
 }
 
 const DEFAULT_SIZE = 600
+/** Pixels per code inside the PDF: a 150pt cell printed at 2in is 160dpi from
+ * 320px, crisp for a scanner and a quarter of the bytes of the 600px ZIP image. */
+const PDF_CODE_SIZE = 320
+/** Codes rendered concurrently. zlib runs on libuv's thread pool, so a few
+ * in flight keep the CPU busy without holding hundreds of buffers at once. */
+const RENDER_CONCURRENCY = 8
 
 /** A4 in PDF points. */
 const PAGE_WIDTH = 595.28
@@ -25,7 +31,11 @@ const MARGIN = 36
 const COLUMNS = 3
 const ROWS = 4
 const PER_PAGE = COLUMNS * ROWS
-const LABEL_HEIGHT = 14
+/** The printed index sits under the code in bold; the party name, if any, under that. */
+const NUMBER_SIZE = 14
+const LABEL_SIZE = 8
+const CAPTION_HEIGHT = NUMBER_SIZE + LABEL_SIZE + 6
+const MAX_LABEL_CHARS = 34
 
 /**
  * Builds the printable/scannable invite URL for a token.
@@ -57,6 +67,16 @@ export async function renderQrPng(url: string, size: number = DEFAULT_SIZE): Pro
   })
 }
 
+/** Renders every item's code, a few at a time, preserving order. */
+async function renderAll(items: QrItem[], size: number): Promise<Buffer[]> {
+  const out: Buffer[] = []
+  for (let start = 0; start < items.length; start += RENDER_CONCURRENCY) {
+    const chunk = items.slice(start, start + RENDER_CONCURRENCY)
+    out.push(...(await Promise.all(chunk.map((item) => renderQrPng(item.url, size)))))
+  }
+  return out
+}
+
 /** Appends a numeric suffix so two invites with the same label do not collide. */
 function uniqueName(base: string, used: Set<string>): string {
   let name = `${base}.png`
@@ -73,12 +93,12 @@ export async function buildQrZip(items: QrItem[]): Promise<Buffer> {
   const zip = new JSZip()
   const used = new Set<string>()
 
-  for (const item of items) {
-    const png = await renderQrPng(item.url)
+  const pngs = await renderAll(items, DEFAULT_SIZE)
+  items.forEach((item, index) => {
     // The number alone names the file: the printer matches "001.png" to
     // card 001 without caring what the invite is labelled this week.
-    zip.file(uniqueName(safeFilename(item.number ?? item.label), used), png)
-  }
+    zip.file(uniqueName(safeFilename(item.number ?? item.label), used), pngs[index]!)
+  })
 
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
@@ -97,14 +117,20 @@ export function buildQrCsv(items: QrItem[]): string {
   return `${[header, ...rows].join('\r\n')}\r\n`
 }
 
+type Fonts = { regular: PDFFont; bold: PDFFont }
+
 export async function buildQrPdf(items: QrItem[]): Promise<Buffer> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const fonts: Fonts = {
+    regular: await doc.embedFont(StandardFonts.Helvetica),
+    bold: await doc.embedFont(StandardFonts.HelveticaBold),
+  }
 
   const cellWidth = (PAGE_WIDTH - MARGIN * 2) / COLUMNS
   const cellHeight = (PAGE_HEIGHT - MARGIN * 2) / ROWS
-  const codeSize = Math.min(cellWidth, cellHeight - LABEL_HEIGHT) - 12
+  const codeSize = Math.min(cellWidth, cellHeight - CAPTION_HEIGHT) - 12
 
+  const pngs = await renderAll(items, PDF_CODE_SIZE)
   const pageCount = Math.max(1, Math.ceil(items.length / PER_PAGE))
 
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
@@ -112,7 +138,8 @@ export async function buildQrPdf(items: QrItem[]): Promise<Buffer> {
     const pageItems = items.slice(pageIndex * PER_PAGE, (pageIndex + 1) * PER_PAGE)
 
     for (const [slot, item] of pageItems.entries()) {
-      await drawQrCell(doc, page, font, item, slot, cellWidth, cellHeight, codeSize)
+      const png = pngs[pageIndex * PER_PAGE + slot]!
+      await drawQrCell(doc, page, fonts, item, png, slot, cellWidth, cellHeight, codeSize)
     }
   }
 
@@ -121,9 +148,10 @@ export async function buildQrPdf(items: QrItem[]): Promise<Buffer> {
 
 async function drawQrCell(
   doc: PDFDocument,
-  page: import('pdf-lib').PDFPage,
-  font: import('pdf-lib').PDFFont,
+  page: PDFPage,
+  fonts: Fonts,
   item: QrItem,
+  png: Buffer,
   slot: number,
   cellWidth: number,
   cellHeight: number,
@@ -135,22 +163,32 @@ async function drawQrCell(
   const cellLeft = MARGIN + column * cellWidth
   const cellTop = PAGE_HEIGHT - MARGIN - row * cellHeight
 
-  const png = await doc.embedPng(await renderQrPng(item.url, 600))
-  page.drawImage(png, {
+  const image = await doc.embedPng(png)
+  page.drawImage(image, {
     x: cellLeft + (cellWidth - codeSize) / 2,
     y: cellTop - codeSize - 4,
     width: codeSize,
     height: codeSize,
   })
 
-  const caption = qrCaption(item)
-  const label = caption.length > 32 ? `${caption.slice(0, 31)}…` : caption
-  const labelWidth = font.widthOfTextAtSize(label, 9)
-  page.drawText(label, {
-    x: cellLeft + (cellWidth - labelWidth) / 2,
-    y: cellTop - codeSize - LABEL_HEIGHT - 4,
-    size: 9,
-    font,
-    color: rgb(0.1, 0.1, 0.1),
-  })
+  const centred = (text: string, font: PDFFont, size: number, y: number) =>
+    page.drawText(text, {
+      x: cellLeft + (cellWidth - font.widthOfTextAtSize(text, size)) / 2,
+      y,
+      size,
+      font,
+      color: rgb(0.1, 0.1, 0.1),
+    })
+
+  // The index is the line the print shop cuts on, so it is bold and on its
+  // own; the party name (once the invite is assigned) is a smaller line
+  // beneath. An un-numbered invite keeps its label as the headline.
+  const headline = item.number ?? item.label
+  const numberBaseline = cellTop - codeSize - 4 - NUMBER_SIZE
+  centred(headline, fonts.bold, NUMBER_SIZE, numberBaseline)
+
+  if (item.number && item.label !== item.number) {
+    const label = item.label.length > MAX_LABEL_CHARS ? `${item.label.slice(0, MAX_LABEL_CHARS - 1)}…` : item.label
+    centred(label, fonts.regular, LABEL_SIZE, numberBaseline - LABEL_SIZE - 3)
+  }
 }
