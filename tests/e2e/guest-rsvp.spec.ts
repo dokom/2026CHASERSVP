@@ -99,7 +99,8 @@ test.describe('guest RSVP', () => {
 
   test('a valid token greets the guest by name and shows the agenda', async ({ page }) => {
     await page.goto(`/i/${E2E_GUEST_TOKEN}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Welcome')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Riley')
+    await expect(page.getByText('CHASE Auto Parts invites')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'The evening' })).toBeVisible()
     await expect(page.getByRole('listitem').first()).toBeVisible()
   })
@@ -110,7 +111,7 @@ test.describe('guest RSVP', () => {
     })
     await page.goto(`/i/${token}`)
     await expect(page.getByRole('heading', { name: 'Your seat' })).toBeVisible()
-    await expect(page.getByTestId('seat-list').getByRole('listitem')).toHaveCount(1)
+    await expect(page.getByTestId('seat-list').locator('[data-table]')).toHaveCount(1)
     await expect(page.getByTestId('seat-list')).toContainText('Table 12')
     await expect(page.locator('[data-countdown]')).toHaveCount(0)
   })
@@ -122,13 +123,15 @@ test.describe('guest RSVP', () => {
     })
     await page.goto(`/i/${token}`)
     await expect(page.getByRole('heading', { name: 'Your seats' })).toBeVisible()
-    const items = page.getByTestId('seat-list').getByRole('listitem')
-    await expect(items).toHaveCount(3)
-    await expect(items.nth(0)).toContainText('Noor Haddad')
-    await expect(items.nth(0)).toContainText('Table 12')
-    await expect(items.nth(1)).toContainText('Sam Haddad')
-    await expect(items.nth(1)).toContainText('Table 7')
-    await expect(items.nth(2)).toContainText('Table 12')
+    // One place card per table, the primary guest's table first; guests who
+    // share a table share a card.
+    const cards = page.getByTestId('seat-list').locator('[data-table]')
+    await expect(cards).toHaveCount(2)
+    await expect(cards.nth(0)).toHaveAttribute('data-table', '12')
+    await expect(cards.nth(0)).toContainText('Noor Haddad')
+    await expect(cards.nth(0)).toContainText('Ola Haddad')
+    await expect(cards.nth(1)).toHaveAttribute('data-table', '7')
+    await expect(cards.nth(1)).toContainText('Sam Haddad')
   })
 
   test('an unconfirmed guest sees a countdown where the seat will be', async ({ page }, testInfo) => {
@@ -155,8 +158,8 @@ test.describe('guest RSVP', () => {
   test('a printed placeholder greets by number and holds the RSVP until someone is assigned', async ({ page }) => {
     const token = await freshPlaceholderToken()
     await page.goto(`/i/${token}`)
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(/Welcome/)
-    await expect(page.locator('[data-guest-name]')).toHaveText(/^\d{3,}$/)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(/You are invited/)
+    await expect(page.locator('[data-invite-number]')).toHaveText(/^\d{3,}$/)
     await expect(page.getByTestId('invite-unassigned')).toBeVisible()
     await expect(page.getByTestId('guest-response')).toHaveCount(0)
     await expect(page.locator('[data-countdown]')).toBeVisible()

@@ -47,20 +47,17 @@ export function Countdown({ targetMs, initialNowMs }: { targetMs: number; initia
       role="timer"
       aria-live="off"
       aria-label={`${parts.days} days, ${parts.hours} hours, ${parts.minutes} minutes and ${parts.seconds} seconds until the event`}
-      className="grid grid-cols-4 gap-2 sm:gap-4"
+      className="grid grid-cols-4 divide-x divide-[var(--color-border)] border-y border-[var(--color-border)] py-5"
     >
       {UNITS.map((unit) => (
-        <div
-          key={unit.key}
-          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-3 text-center sm:px-3 sm:py-4"
-        >
+        <div key={unit.key} className="px-1 text-center sm:px-3">
           <span
             data-countdown-unit={unit.key}
-            className="block font-serif text-3xl tabular-nums text-[var(--accent-ink)] sm:text-4xl"
+            className="block font-serif text-4xl tabular-nums text-[var(--accent-ink)] sm:text-5xl"
           >
             {String(parts[unit.key]).padStart(2, '0')}
           </span>
-          <span className="mt-1 block text-[0.625rem] uppercase tracking-[0.1em] text-[var(--color-text-muted)] sm:text-xs sm:tracking-[0.18em]">
+          <span className="mt-2 block text-xs text-[var(--color-text-muted)] sm:text-sm">
             {unit.label}
           </span>
         </div>

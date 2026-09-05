@@ -56,19 +56,10 @@ function measure(root: HTMLElement): Geometry | null {
   const width = root.clientWidth
   const height = root.scrollHeight
 
-  const anchors: Anchor[] = headings.slice(1).map((h) => {
-    const anchor: Anchor = { y: docTop(h) - rootTop }
-    // The seat act bends toward the guest's marker, if one is placed.
-    if (h.id === 'seat') {
-      const marker = root.querySelector<HTMLElement>('[data-testid="table-marker"]')
-      if (marker) {
-        const rect = marker.getBoundingClientRect()
-        anchor.x = rect.left + rect.width / 2 - root.getBoundingClientRect().left
-        anchor.y = docTop(marker) - rootTop
-      }
-    }
-    return anchor
-  })
+  // One anchor per act heading, all in the gutter: the line is a margin
+  // rule that keeps the guest company down the page, never a pointer that
+  // crosses the text or the plan.
+  const anchors: Anchor[] = headings.slice(1).map((h) => ({ y: docTop(h) - rootTop }))
 
   // The seal is an <svg>, not an HTMLElement — offsetWidth/offsetHeight are
   // undefined on SVGSVGElement, which would poison this whole path with NaN.

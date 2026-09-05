@@ -174,18 +174,18 @@ body {
 /* One-shot brass shimmer after the stamp lands (Task 10). The base text stays
    fully readable throughout; a translucent brass highlight — duplicated text
    via attr(), clipped to its own glyphs — sweeps across on ::after using only
-   transform + opacity. `data-shimmer-text` is set by rsvp-form.tsx to the
-   exact confirmation copy so the clip lines up with the real text. */
+   transform + opacity. `data-shimmer` + `data-shimmer-text` are set by rsvp-form.tsx on the
+   confirmation headline, with the exact copy, so the clip lines up. */
 @keyframes sealed-shimmer {
   0%   { transform: translateX(-120%); opacity: 0; }
   15%  { opacity: 1; }
   85%  { opacity: 1; }
   100% { transform: translateX(120%); opacity: 0; }
 }
-.sealed-shimmer [data-testid="rsvp-confirmed"] {
+.sealed-shimmer [data-shimmer] {
   position: relative;
 }
-.sealed-shimmer [data-testid="rsvp-confirmed"]::after {
+.sealed-shimmer [data-shimmer]::after {
   content: attr(data-shimmer-text);
   position: absolute;
   inset: 0;

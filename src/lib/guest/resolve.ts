@@ -21,6 +21,7 @@ export type GuestRow = {
 
 export type GuestInvite = {
   id: string
+  number: number
   label: string
   status: InviteStatus
   tableNumber: string | null
@@ -35,6 +36,7 @@ export type GuestInvite = {
  */
 const SELECT = {
   id: true,
+  number: true,
   label: true,
   status: true,
   tableNumber: true,

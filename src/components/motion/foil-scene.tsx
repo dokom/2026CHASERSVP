@@ -8,7 +8,7 @@ import {
 import { journey } from '@/lib/motion/journey'
 import type { ColorScheme } from './motion-provider'
 
-const COUNT = 800
+const COUNT = 420
 const ACCENT = new Color('#E00E0F')
 const ACCENT_DIM = new Color('#A10A0B')
 /** Roughly a third of the dark-scheme fleck alpha, so light-scheme foil reads
@@ -20,6 +20,7 @@ const VERTEX = /* glsl */ `
   uniform float uTime;
   uniform float uDisperse;
   uniform float uAlphaScale;
+  uniform float uPixelRatio;
   varying float vAlpha;
   void main() {
     vec3 p = position;
@@ -30,8 +31,13 @@ const VERTEX = /* glsl */ `
     p.xy += normalize(p.xy + 0.0001) * uDisperse * (0.8 + aSeed) * 1.6;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = (1.2 + aSeed * 2.2) * (240.0 / -mv.z);
-    vAlpha = (0.35 + aSeed * 0.5) * (1.0 - uDisperse * 0.6) * uAlphaScale;
+    // A glint is 2–6 CSS px at the camera's mid depth, scaled by the device
+    // pixel ratio so it stays that size on a phone. (Sized in device pixels
+    // by the GPU, so a raw constant here rendered as a wall of red.)
+    gl_PointSize = (2.0 + aSeed * 4.0) * uPixelRatio * (2.6 / -mv.z);
+    // The smallest glints are the faintest, so the field reads as depth
+    // rather than an even sprinkle.
+    vAlpha = (0.18 + aSeed * 0.62) * (1.0 - uDisperse * 0.6) * uAlphaScale;
   }
 `
 
@@ -118,6 +124,7 @@ export function FoilScene({ scheme }: { scheme: ColorScheme }) {
         uDisperse: { value: 0 },
         uColor: { value: ACCENT },
         uAlphaScale: { value: 1 },
+        uPixelRatio: { value: renderer.getPixelRatio() },
       },
     })
     materialRef.current = material

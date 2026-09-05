@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 /**
  * The floorplan's frame, with click-to-fullscreen.
  *
- * `inline` is the [data-seat-map] stage SeatAct scales on scroll; this frame
+ * `inline` is the plan as it sits in the page; this frame
  * clips it (an element cannot `overflow-hidden` its own transform, which is
  * why the two are separate). `fullscreen` is a second, unscaled rendering of
  * the same plan for the overlay: server-rendered twice rather than cloned
@@ -44,7 +44,7 @@ export function SeatMapViewer({ inline, fullscreen }: { inline: React.ReactNode;
         onClick={() => setFullscreen(true)}
         aria-label="View the floorplan full screen"
         data-seat-map-viewport
-        className="relative block w-full cursor-zoom-in overflow-hidden rounded border border-[var(--color-border)] p-0 text-left lg:max-w-md"
+        className="relative block w-full cursor-zoom-in overflow-hidden rounded border border-[var(--color-border)] p-0 text-left"
       >
         {inline}
       </button>
