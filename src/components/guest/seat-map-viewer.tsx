@@ -44,7 +44,11 @@ export function SeatMapViewer({ inline, fullscreen }: { inline: React.ReactNode;
         onClick={() => setFullscreen(true)}
         aria-label="View the floorplan full screen"
         data-seat-map-viewport
-        className="relative block w-full cursor-zoom-in overflow-hidden rounded border border-[var(--color-border)] p-0 text-left"
+        // Opaque, in exactly the colour that was always behind it (the page
+        // ground; the card's surface from lg up): the motion stage now runs
+        // behind the whole page, and its symbolic tables must never show
+        // through a floorplan uploaded with a transparent background.
+        className="relative block w-full cursor-zoom-in overflow-hidden rounded border border-[var(--color-border)] bg-[var(--ground)] p-0 text-left lg:bg-[var(--surface)]"
       >
         {inline}
       </button>

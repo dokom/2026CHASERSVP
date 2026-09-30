@@ -91,7 +91,7 @@ export default async function GuestPage({
         className="relative isolate mx-auto max-w-2xl space-y-16 overflow-x-clip px-6 py-14 lg:my-12 lg:max-w-3xl lg:rounded-[2rem] lg:border lg:border-[var(--color-border)] lg:bg-[var(--surface)] lg:px-28 lg:py-20 lg:shadow-[0_48px_120px_-48px_rgba(0,0,0,0.65)]"
       >
         <BrassLine />
-        <FoilHero />
+        <FoilHero highlightSeat={seat.shown && seats.length > 0} />
 
         {/* The host's mark, before the guest's name: this is CHASE's evening. */}
         <div className={SECTION}>

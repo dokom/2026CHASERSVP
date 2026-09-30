@@ -204,3 +204,56 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+
+/* ------------------------------------------------------------- lite stage */
+/* The lite tier's stand-in for the WebGL stage: one soft glow per act, fixed
+   behind the page and cross-faded by the tracker's `data-act`. Opacity is the
+   only thing that moves, so it costs nothing per frame. Kept faint enough
+   that text contrast is set by the ground, not the glow. */
+.stage-lite {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  --stage-glow: 1;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .stage-lite { --stage-glow: 0.6; }
+}
+:root[data-theme="light"] .stage-lite { --stage-glow: 0.6; }
+
+.stage-lite > span {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 900ms var(--ease-out-expo);
+}
+[data-act="0"] > .stage-lite > [data-lite-act="0"],
+[data-act="1"] > .stage-lite > [data-lite-act="1"],
+[data-act="2"] > .stage-lite > [data-lite-act="2"],
+[data-act="3"] > .stage-lite > [data-lite-act="3"],
+[data-act="4"] > .stage-lite > [data-lite-act="4"] {
+  opacity: var(--stage-glow);
+}
+/* Seal: foil warmth behind the wax. */
+[data-lite-act="0"] {
+  background: radial-gradient(60% 45% at 18% 22%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%);
+}
+/* Drive: tail-light red and headlight white, low on the road. */
+[data-lite-act="1"] {
+  background:
+    radial-gradient(40% 16% at 70% 80%, color-mix(in oklab, var(--accent) 20%, transparent), transparent 70%),
+    radial-gradient(40% 16% at 30% 74%, color-mix(in oklab, #FFE9C8 14%, transparent), transparent 70%);
+}
+/* Evening: a chandelier's gold, overhead. */
+[data-lite-act="2"] {
+  background: radial-gradient(55% 35% at 50% 10%, color-mix(in oklab, #FFC36B 18%, transparent), transparent 70%);
+}
+/* Seat: the room's blue floor. */
+[data-lite-act="3"] {
+  background: radial-gradient(70% 30% at 50% 100%, color-mix(in oklab, var(--chase-blue) 22%, transparent), transparent 70%);
+}
+/* Response: nearly nothing — the form has the stage. */
+[data-lite-act="4"] {
+  background: radial-gradient(80% 40% at 50% 100%, color-mix(in oklab, var(--chase-blue) 10%, transparent), transparent 70%);
+}

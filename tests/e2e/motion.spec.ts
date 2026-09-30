@@ -12,6 +12,35 @@ function trackScripts(page: import('@playwright/test').Page): Set<string> {
   return urls
 }
 
+/** Count the animation frames the page requests over `durationMs`. */
+function countFrames(page: import('@playwright/test').Page, durationMs: number): Promise<number> {
+  return page.evaluate(async (duration) => {
+    let frames = 0
+    const original = window.requestAnimationFrame
+    window.requestAnimationFrame = (cb) => { frames++; return original(cb) }
+    await new Promise((r) => setTimeout(r, duration))
+    window.requestAnimationFrame = original
+    return frames
+  }, durationMs)
+}
+
+/** Count the stage's WebGL draws over `durationMs` — the render loop's own
+ * work, as distinct from anything else on the page that uses rAF. */
+function countDraws(page: import('@playwright/test').Page, durationMs: number): Promise<number> {
+  return page.evaluate(async (duration) => {
+    let draws = 0
+    const proto = WebGL2RenderingContext.prototype
+    const original = proto.drawElementsInstanced
+    proto.drawElementsInstanced = function (...args) { draws++; return original.apply(this, args) }
+    await new Promise((r) => setTimeout(r, duration))
+    proto.drawElementsInstanced = original
+    return draws
+  }, durationMs)
+}
+
+/** Long enough for the stage to glide from the first act to the last. */
+const STAGE_SETTLE_MS = 2500
+
 test.describe('motion safety rails', () => {
   test('reduced motion renders the final state with nothing animating', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -117,21 +146,12 @@ test.describe('motion safety rails', () => {
     await page.goto(url)
     await page.waitForSelector('canvas[data-foil-hero]')
 
-    const countFrames = (durationMs: number) => page.evaluate(async (duration) => {
-      let frames = 0
-      const original = window.requestAnimationFrame
-      window.requestAnimationFrame = (cb) => { frames++; return original(cb) }
-      await new Promise((r) => setTimeout(r, duration))
-      window.requestAnimationFrame = original
-      return frames
-    }, durationMs)
-
     // Positive control: prove the render loop is actually running while the
     // tab is visible. Without this, framesWhileHidden === 0 below would
     // pass identically whether the tab pauses on hide OR the scene never
     // renders a single frame in the first place — the assertion alone
     // cannot distinguish "paused correctly" from "never ran".
-    const framesWhileVisible = await countFrames(400)
+    const framesWhileVisible = await countFrames(page, 400)
     expect(framesWhileVisible).toBeGreaterThan(0)
 
     // Simulate the tab being hidden, then confirm no frame is requested.
@@ -139,8 +159,71 @@ test.describe('motion safety rails', () => {
       Object.defineProperty(document, 'hidden', { get: () => true, configurable: true })
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    const framesWhileHidden = await countFrames(400)
+    const framesWhileHidden = await countFrames(page, 400)
     expect(framesWhileHidden).toBe(0)
+  })
+
+  test('the stage follows the scroll to the response act, then comes to rest', async ({ page }) => {
+    await page.goto(url)
+    await page.waitForSelector('canvas[data-foil-hero]')
+    const stage = page.locator('[data-stage]')
+    await expect(stage).toHaveAttribute('data-act', '0')
+
+    await page.locator('[aria-labelledby="evening"]').evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await expect(stage).toHaveAttribute('data-act', '2')
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await expect(stage).toHaveAttribute('data-act', '4')
+
+    // Settled on the response act, the scene draws one still frame and
+    // stops: a guest filling in the form is not paying for a render loop.
+    await page.waitForTimeout(STAGE_SETTLE_MS)
+    expect(await countDraws(page, 400)).toBe(0)
+
+    // Positive control: one jump back to the top wakes it and it KEEPS
+    // drawing through the glide — not a single stale frame and back to
+    // sleep — so the zero above is a loop at rest, not a scene that never drew.
+    const drawsAfterScroll = countDraws(page, 400)
+    await page.evaluate(() => window.scrollTo(0, 0))
+    expect(await drawsAfterScroll).toBeGreaterThan(5)
+    await expect(stage).toHaveAttribute('data-act', '0')
+  })
+
+  test('the stage wakes when the page grows under a resting guest', async ({ page }) => {
+    await page.goto(url)
+    await page.waitForSelector('canvas[data-foil-hero]')
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await expect(page.locator('[data-stage]')).toHaveAttribute('data-act', '4')
+    await page.waitForTimeout(STAGE_SETTLE_MS)
+    expect(await countDraws(page, 400)).toBe(0)
+
+    // No scroll event: the response act simply grows, as it does when the
+    // form swaps for its ticket. The act moves, so the scene must follow.
+    const draws = countDraws(page, 400)
+    await page.locator('[aria-labelledby="rsvp"]').evaluate((section) => {
+      const spacer = document.createElement('div')
+      spacer.style.height = '1500px'
+      section.append(spacer)
+    })
+    expect(await draws).toBeGreaterThan(0)
+  })
+
+  test('lite motion follows the acts with CSS alone', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => 2 })
+    })
+    // Dark: the light scheme deliberately caps the glow below 1.
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.goto(url)
+    await expect(page.locator('[data-motion]')).toHaveAttribute('data-motion', 'lite')
+    const stage = page.locator('[data-stage]')
+    await expect(stage).toHaveAttribute('data-act', '0')
+    await expect(page.locator('.stage-lite > [data-lite-act="0"]')).toHaveCSS('opacity', '1')
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await expect(stage).toHaveAttribute('data-act', '4')
+    await expect(page.locator('.stage-lite > [data-lite-act="4"]')).toHaveCSS('opacity', '1')
+    await expect(page.locator('.stage-lite > [data-lite-act="0"]')).toHaveCSS('opacity', '0')
+    await expect(page.locator('canvas')).toHaveCount(0)
   })
 
   test('never scrolls horizontally at phone width', async ({ page }) => {

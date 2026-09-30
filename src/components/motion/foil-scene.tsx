@@ -1,179 +1,143 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, Color, NormalBlending, PerspectiveCamera,
-  Points, Scene, ShaderMaterial, WebGLRenderer,
-} from 'three'
-import { journey } from '@/lib/motion/journey'
+import { PerspectiveCamera, Scene, WebGLRenderer } from 'three'
+import { actTransitions, damp } from '@/lib/motion/acts'
+import { journey, onStageChange } from '@/lib/motion/journey'
+import { buildStageLayout } from '@/lib/motion/stage-layout'
 import type { ColorScheme } from './motion-provider'
+import { CameraRig } from './stage/camera-rig'
+import { applyScheme, createParticles, type StageUniforms } from './stage/particles'
 
-const COUNT = 420
-const ACCENT = new Color('#E00E0F')
-const ACCENT_DIM = new Color('#A10A0B')
-/** Roughly a third of the dark-scheme fleck alpha, so light-scheme foil reads
- * as darker flecks on a bone card rather than a light smear. */
-const LIGHT_ALPHA_SCALE = 1 / 3
+/** How fast the shown stage catches up with the scrolled one (per second).
+ * A jump from the first act to the last settles in about 1.7 s. */
+const STAGE_RATE = 5
+/** Close enough to snap: below this the difference is invisible, and
+ * snapping is what lets the loop come to rest. */
+const SETTLE_EPSILON = 0.001
+/** A tab returning from the background must not teleport the camera. */
+const MAX_FRAME_SECONDS = 0.1
+const FAR_PLANE = 60
 
-const VERTEX = /* glsl */ `
-  attribute float aSeed;
-  uniform float uTime;
-  uniform float uDisperse;
-  uniform float uAlphaScale;
-  uniform float uPixelRatio;
-  varying float vAlpha;
-  void main() {
-    vec3 p = position;
-    // Slow drift upward with a lateral sway unique to each fleck.
-    p.y += mod(uTime * 0.04 * (0.6 + aSeed), 2.4) - 1.2;
-    p.x += sin(uTime * 0.3 + aSeed * 6.28) * 0.08;
-    // Disperse radially from the origin as the seal breaks.
-    p.xy += normalize(p.xy + 0.0001) * uDisperse * (0.8 + aSeed) * 1.6;
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    gl_Position = projectionMatrix * mv;
-    // A glint is 2–6 CSS px at the camera's mid depth, scaled by the device
-    // pixel ratio so it stays that size on a phone. (Sized in device pixels
-    // by the GPU, so a raw constant here rendered as a wall of red.)
-    gl_PointSize = (2.0 + aSeed * 4.0) * uPixelRatio * (2.6 / -mv.z);
-    // The smallest glints are the faintest, so the field reads as depth
-    // rather than an even sprinkle.
-    vAlpha = (0.18 + aSeed * 0.62) * (1.0 - uDisperse * 0.6) * uAlphaScale;
-  }
-`
-
-const FRAGMENT = /* glsl */ `
-  uniform vec3 uColor;
-  varying float vAlpha;
-  void main() {
-    // Soft disc; discard the corners so points read as flecks, not squares.
-    float d = length(gl_PointCoord - 0.5);
-    if (d > 0.5) discard;
-    float edge = smoothstep(0.5, 0.2, d);
-    gl_FragColor = vec4(uColor, vAlpha * edge);
-  }
-`
-
-/**
- * AdditiveBlending is what makes the flecks read as glowing foil against the
- * dark ground — on a light (bone) ground the same blend mode sums
- * light-on-light and washes out into a yellow smear. Switch to normal
- * blending, the dimmer brass token, and a third of the alpha so flecks read
- * as darker foil on a light card instead.
- */
-function applySchemeToMaterial(material: ShaderMaterial, scheme: ColorScheme): void {
-  const isLight = scheme === 'light'
-  material.blending = isLight ? NormalBlending : AdditiveBlending
-  material.uniforms.uColor!.value = isLight ? ACCENT_DIM : ACCENT
-  material.uniforms.uAlphaScale!.value = isLight ? LIGHT_ALPHA_SCALE : 1
-  material.needsUpdate = true
-}
-
-function buildGeometry(): BufferGeometry {
-  const positions = new Float32Array(COUNT * 3)
-  const seeds = new Float32Array(COUNT)
-  for (let i = 0; i < COUNT; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 3.2
-    positions[i * 3 + 1] = (Math.random() - 0.5) * 2.4
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 1.5
-    seeds[i] = Math.random()
-  }
-  const geometry = new BufferGeometry()
-  geometry.setAttribute('position', new BufferAttribute(positions, 3))
-  geometry.setAttribute('aSeed', new BufferAttribute(seeds, 1))
-  return geometry
+type Live = {
+  material: ReturnType<typeof createParticles>['material']
+  uniforms: StageUniforms
+  wake: () => void
 }
 
 /**
- * Brass foil flecks behind the arrival act. Pauses when the tab is hidden or
- * the hero scrolls out of view, and disposes everything on unmount — a WebGL
- * context left running off-screen is exactly the battery drain the spec's
- * motion rails forbid.
+ * The five-act stage: one fixed full-viewport canvas behind the page, where
+ * the foil flecks of the seal become the lights of a night drive, a
+ * chandelier, and the tables of the room, as the guest scrolls.
+ *
+ * The loop runs only while there is something to animate. Once the response
+ * act is reached and the camera has settled, it renders one still frame and
+ * stops, waking again when the stage moves or the canvas resizes; it also
+ * pauses while the tab is hidden or the context is lost, and disposes
+ * everything on unmount.
  */
-export function FoilScene({ scheme }: { scheme: ColorScheme }) {
+export function FoilScene({ scheme, highlight }: { scheme: ColorScheme; highlight: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const materialRef = useRef<ShaderMaterial | null>(null)
+  const liveRef = useRef<Live | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
 
     // No usable WebGL — disabled, a blocklisted GPU, or a context this canvas
-    // already lost — throws from inside Three's constructor. The hero is
+    // already lost — throws from inside Three's constructor. The stage is
     // decoration: log it and render nothing rather than take the page down.
     let renderer: WebGLRenderer
     try {
       renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'low-power' })
     } catch (error) {
-      console.warn('Foil hero disabled: WebGL is unavailable on this device', error)
+      console.warn('Stage disabled: WebGL is unavailable on this device', error)
       return undefined
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
 
     const scene = new Scene()
-    const camera = new PerspectiveCamera(55, 1, 0.1, 10)
-    camera.position.z = 2.6
+    const camera = new PerspectiveCamera(55, 1, 0.1, FAR_PLANE)
+    const rig = new CameraRig()
+    const { mesh, material, uniforms } = createParticles(buildStageLayout())
+    scene.add(mesh)
 
-    const material = new ShaderMaterial({
-      vertexShader: VERTEX,
-      fragmentShader: FRAGMENT,
-      transparent: true,
-      depthWrite: false,
-      blending: AdditiveBlending,
-      uniforms: {
-        uTime: { value: 0 },
-        uDisperse: { value: 0 },
-        uColor: { value: ACCENT },
-        uAlphaScale: { value: 1 },
-        uPixelRatio: { value: renderer.getPixelRatio() },
-      },
-    })
-    materialRef.current = material
-    applySchemeToMaterial(material, scheme)
-    const points = new Points(buildGeometry(), material)
-    scene.add(points)
-
+    // The text column is the guest page's <main>, centred: its share of the
+    // viewport's width is its half-width in NDC.
+    const column = canvas.closest('[data-guest-root]')
     const resize = () => {
       const { clientWidth, clientHeight } = canvas
       renderer.setSize(clientWidth, clientHeight, false)
       camera.aspect = clientWidth / clientHeight
       camera.updateProjectionMatrix()
+      uniforms.uColumn.value = column ? Math.min(1, column.clientWidth / clientWidth) : 1
     }
     resize()
-    const ro = new ResizeObserver(resize)
-    ro.observe(canvas)
 
-    let visible = true
     let hidden = document.hidden
+    let lost = false
     let frame = 0
-    const start = performance.now()
+    // Start where the page already is: a reload halfway down must not fly
+    // the camera in from the seal.
+    let shown = journey.stage
+    let last = performance.now()
+    const start = last
 
-    const tick = () => {
+    const tick = (now: number) => {
       frame = 0
-      if (!visible || hidden) return
-      material.uniforms.uTime!.value = (performance.now() - start) / 1000
-      material.uniforms.uDisperse!.value = journey.sealBreak
+      if (hidden || lost) return
+      const dt = Math.min(MAX_FRAME_SECONDS, Math.max(0, (now - last) / 1000))
+      last = now
+
+      const target = journey.stage
+      shown = Math.abs(target - shown) < SETTLE_EPSILON ? target : damp(shown, target, STAGE_RATE, dt)
+      const morph = actTransitions(shown)
+
+      rig.apply(camera, shown)
+      uniforms.uMorph.value.set(...morph)
+      uniforms.uTime.value = (now - start) / 1000
+      uniforms.uSealBreak.value = journey.sealBreak
       renderer.render(scene, camera)
+
+      const resting = morph[3] >= 1 && shown === target
+      if (!resting) frame = requestAnimationFrame(tick)
+    }
+    const wake = () => {
+      if (frame || hidden || lost) return
+      last = performance.now()
       frame = requestAnimationFrame(tick)
     }
-    const run = () => { if (!frame && visible && !hidden) frame = requestAnimationFrame(tick) }
 
-    const io = new IntersectionObserver(([entry]) => {
-      visible = entry?.isIntersecting ?? false
-      run()
-    })
-    io.observe(canvas)
+    liveRef.current = { material, uniforms, wake }
+    applyScheme(material, uniforms, scheme)
+    uniforms.uHighlight.value = highlight ? 1 : 0
 
-    const onVisibility = () => { hidden = document.hidden; run() }
+    const onResize = () => { resize(); wake() }
+    const ro = new ResizeObserver(onResize)
+    ro.observe(canvas)
+    const onVisibility = () => { hidden = document.hidden; wake() }
+    // Three prevents the default on loss so the context can come back; the
+    // loop only has to stop asking for frames until it does.
+    const onLost = () => { lost = true; cancelAnimationFrame(frame); frame = 0 }
+    const onRestored = () => { lost = false; wake() }
+
     document.addEventListener('visibilitychange', onVisibility)
-    run()
+    // Woken by the tracker AFTER it writes the new stage — never by scroll
+    // directly, which could run first and read the stage one frame stale.
+    const offStage = onStageChange(wake)
+    canvas.addEventListener('webglcontextlost', onLost)
+    canvas.addEventListener('webglcontextrestored', onRestored)
+    wake()
 
     return () => {
       cancelAnimationFrame(frame)
       document.removeEventListener('visibilitychange', onVisibility)
-      io.disconnect()
+      offStage()
+      canvas.removeEventListener('webglcontextlost', onLost)
+      canvas.removeEventListener('webglcontextrestored', onRestored)
       ro.disconnect()
-      materialRef.current = null
-      points.geometry.dispose()
+      liveRef.current = null
+      mesh.geometry.dispose()
       material.dispose()
       renderer.dispose()
       // dispose() alone frees Three's own GPU resources but leaves the
@@ -184,21 +148,23 @@ export function FoilScene({ scheme }: { scheme: ColorScheme }) {
       // context lost here can never be re-acquired by the next renderer.
       if (!canvas.isConnected) renderer.forceContextLoss()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- scene setup/teardown runs once; scheme changes are applied by the effect below
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scene setup/teardown runs once; prop changes are applied by the effect below
   }, [])
 
   useEffect(() => {
-    const material = materialRef.current
-    if (!material) return
-    applySchemeToMaterial(material, scheme)
-  }, [scheme])
+    const live = liveRef.current
+    if (!live) return
+    applyScheme(live.material, live.uniforms, scheme)
+    live.uniforms.uHighlight.value = highlight ? 1 : 0
+    live.wake()
+  }, [scheme, highlight])
 
   return (
     <canvas
       ref={canvasRef}
       aria-hidden="true"
       data-foil-hero
-      className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[70vh] w-full"
+      className="pointer-events-none fixed inset-0 -z-10 h-full w-full"
     />
   )
 }

@@ -182,10 +182,14 @@ for (const width of WIDTHS) {
  * easing curve, or a one-shot reveal's final frame could regress invisibly.
  * This is the one full-motion baseline: no reduced-motion override, scrolled
  * to the bottom and settled so the one-shot reveals (name letters, seal
- * break, agenda stagger) have finished before the shot. The foil hero lives
- * at the top of the page and pauses its rAF loop once scrolled off-screen
- * (see foil-scene.tsx's IntersectionObserver gate), so the bottom of the
- * page is the deterministic frame to capture in full motion.
+ * break, agenda stagger) have finished and the WebGL stage has come to rest
+ * on the response act.
+ *
+ * Two shots, because the stage is a fixed full-viewport canvas: the
+ * viewport shot captures the settled stage (deterministic — at rest the
+ * shader's time-driven motion is weighted to zero and the layout is seeded),
+ * then the full-page shot hides the canvas, since Playwright grows the
+ * viewport to the whole page for it and the stage would re-anchor mid-shot.
  */
 test('guest page — 375px, dark, full motion', async ({ page }, testInfo) => {
   skipRedundantProject(testInfo)
@@ -195,7 +199,12 @@ test('guest page — 375px, dark, full motion', async ({ page }, testInfo) => {
   await expect(page.locator('[data-motion]')).toHaveAttribute('data-motion', 'full')
   await page.waitForLoadState('networkidle')
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-  await page.waitForTimeout(1200)
+  await expect(page.locator('[data-stage]')).toHaveAttribute('data-act', '4')
+  await page.waitForTimeout(2500)
+  await expect(page).toHaveScreenshot('guest-375-dark-full-motion-stage.png', {
+    maxDiffPixelRatio: 0.02,
+  })
+  await page.addStyleTag({ content: 'canvas[data-foil-hero] { visibility: hidden; }' })
   await expect(page).toHaveScreenshot('guest-375-dark-full-motion.png', {
     fullPage: true,
     maxDiffPixelRatio: 0.02,

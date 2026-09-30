@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { animate, createDrawable, onScroll } from 'animejs'
+import { ACT_IDS } from '@/lib/motion/acts'
 import { buildBrassPath, type Anchor } from '@/lib/motion/brass-path'
 import { useMotionScope } from './use-motion-scope'
 import { useMotionMode } from './motion-provider'
 
 const GUTTER_X = 24
-const ACT_IDS = ['welcome', 'event', 'evening', 'seat', 'rsvp'] as const
 /** Vertical breathing room between the drawn line's end and the RSVP act it
  * terminates just above, so the stroke never crosses into the form. */
 const RSVP_CLEARANCE = 40
